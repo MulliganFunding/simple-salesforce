@@ -27,6 +27,7 @@ setup(
     long_description_content_type='text/x-rst',
     install_requires=[
         'requests>=2.22.0',
+        'httpx>=0.18.2,<1.0'
         'authlib'
     ],
     tests_require=[
