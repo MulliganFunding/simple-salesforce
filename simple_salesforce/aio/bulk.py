@@ -386,7 +386,9 @@ class AsyncSFBulkType:
 
     async def query(self, data, lazy_operation=False, wait=5):
         """ bulk query """
-        results = await self._bulk_operation(operation='query', data=data, wait=wait)
+        results = await self._bulk_operation(
+            operation='query', data=data, wait=wait
+        )
 
         if lazy_operation:
             return results
@@ -395,7 +397,9 @@ class AsyncSFBulkType:
 
     async def query_all(self, data, lazy_operation=False, wait=5):
         """ bulk queryAll """
-        results = await self._bulk_operation(operation='queryAll', data=data, wait=wait)
+        results = await self._bulk_operation(
+            operation='queryAll', data=data, wait=wait
+        )
 
         if lazy_operation:
             return results
