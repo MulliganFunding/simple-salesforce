@@ -52,9 +52,69 @@ EXPECTED_QUERY = [
         "FirstName": "Alice", "LastName": "y"}
 ]
 
-@pytest.mark.skip
+
 @pytest.mark.asyncio
-async def test_delete(sf_client, mock_httpx_client):
+@pytest.mark.parametrize("operation,method_name", (
+    ("delete", "delete"),
+    ("insert", "insert"),
+    ("update", "update"),
+    ("hardDelete", "hard_delete"),
+))
+async def test_insert(operation, method_name, sf_client, mock_httpx_client):
+    """Test bulk insert records"""
+    _, mock_client, _ = mock_httpx_client
+    body1 = {
+        "apiVersion": 42.0,
+        "concurrencyMode": "Parallel",
+        "contentType": "JSON",
+        "id": "Job-1",
+        "object": "Contact",
+        "operation": operation,
+        "state": "Open"
+    }
+    body2 = {"id": "Batch-1", "jobId": "Job-1", "state": "Queued"}
+    body3 = copy.deepcopy(body1)
+    body3["state"] = "Closed"
+    body4 = copy.deepcopy(body2)
+    body4["state"] = "InProgress"
+    body5 = copy.deepcopy(body2)
+    body5["state"] = "Completed"
+    body6 = [{
+            "success": True,
+            "created": True,
+            "id": "001xx000003DHP0AAO",
+            "errors": []
+        }, {
+            "success": True,
+            "created": True,
+            "id": "001xx000003DHP1AAO",
+            "errors": []
+        }]
+    body7 = {}
+    all_bodies = [body1, body2, body3, body4, body5, body6, body7]
+    responses = [
+        httpx.Response(200, content=json.dumps(body)) for body in all_bodies
+    ]
+    mock_client.request.side_effect = mock.AsyncMock(side_effect=responses)
+    data = [{
+        'AccountId': 'ID-1',
+        'Email': 'contact1@example.com',
+        'FirstName': 'Bob',
+        'LastName': 'x'
+    }, {
+        'AccountId': 'ID-2',
+        'Email': 'contact2@example.com',
+        'FirstName': 'Alice',
+        'LastName': 'y'
+    }]
+    function = getattr(sf_client.bulk.Contact, method_name)
+    result = await function(data, wait=0.1)
+    assert EXPECTED_RESULT == result
+
+
+@pytest.mark.asyncio
+async def test_upsert(sf_client, mock_httpx_client):
+    """Test bulk upsert records"""
     _, mock_client, _ = mock_httpx_client
     operation = 'delete'
     body1 = {
@@ -84,7 +144,8 @@ async def test_delete(sf_client, mock_httpx_client):
             "id": "001xx000003DHP1AAO",
             "errors": []
         }]
-    all_bodies = [body1, body2, body3, body4, body5, body6]
+    body7 = {}
+    all_bodies = [body1, body2, body3, body4, body5, body6, body7]
     responses = [
         httpx.Response(200, content=json.dumps(body)) for body in all_bodies
     ]
@@ -94,6 +155,5 @@ async def test_delete(sf_client, mock_httpx_client):
     }, {
         'id': 'ID-2',
     }]
-    result = await sf_client.bulk.Contact.delete(data, wait=0.1)
+    result = await sf_client.bulk.Contact.upsert(data, "some-field", wait=0.1)
     assert EXPECTED_RESULT == result
-
