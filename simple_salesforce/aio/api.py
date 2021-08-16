@@ -92,6 +92,9 @@ async def build_async_salesforce_client(
     """
     if domain is None:
         domain = 'login'
+    if session is None:
+        session = httpx.AsyncClient(proxies=proxies)
+
     instance_kwargs = {
         "version": version,
         "proxies": proxies,

@@ -2,6 +2,7 @@
 
 Heavily Modified from RestForce 1.0.0
 """
+import aiofiles
 from datetime import datetime, timedelta, timezone
 from html import escape
 from json.decoder import JSONDecodeError
@@ -164,9 +165,8 @@ async def SalesforceLogin(
             )
         }
         if privatekey_file is not None:
-            # TODO: Should be async so as not to block eventloop
-            with open(privatekey_file, 'rb') as key_file:
-                key = key_file.read()
+            async with aiofiles.open(privatekey_file, 'rb') as key_file:
+                key = await key_file.read()
         else:
             key = privatekey
 
