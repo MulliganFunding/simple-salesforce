@@ -5,6 +5,7 @@ Heavily Modified from RestForce 1.0.0
 from datetime import datetime, timedelta, timezone
 from html import escape
 from json.decoder import JSONDecodeError
+import typing
 import warnings
 
 from authlib.jose import jwt
@@ -30,7 +31,7 @@ async def SalesforceLogin(
     consumer_key=None,
     privatekey_file=None,
     privatekey=None,
-):
+) -> typing.Tuple[str, str]:
     """Return a tuple of `(session_id, sf_instance)` where `session_id` is the
     session ID to use for authentication to Salesforce and `sf_instance` is
     the domain of the instance of Salesforce to use for the session.
@@ -163,6 +164,7 @@ async def SalesforceLogin(
             )
         }
         if privatekey_file is not None:
+            # TODO: Should be async so as not to block eventloop
             with open(privatekey_file, 'rb') as key_file:
                 key = key_file.read()
         else:

@@ -2,12 +2,13 @@
 import json
 import logging
 import re
-from collections import OrderedDict, namedtuple
+from collections import OrderedDict
+from typing import Optional
 from urllib.parse import urljoin, urlparse
 
 import httpx
 
-from simple_salesforce.api import DEFAULT_API_VERSION
+from simple_salesforce.api import DEFAULT_API_VERSION,  PerAppUsage, Usage
 from simple_salesforce.exceptions import SalesforceGeneralError
 from simple_salesforce.util import date_to_iso8601, exception_handler
 from .bulk import SFBulkHandler
@@ -17,24 +18,21 @@ from .metadata import SfdcMetadataApi
 # pylint: disable=invalid-name
 logger = logging.getLogger(__name__)
 
-Usage = namedtuple('Usage', 'used total')
-PerAppUsage = namedtuple('PerAppUsage', 'used total name')
-
 
 async def build_async_salesforce_client(
-    username=None,
-    password=None,
-    security_token=None,
-    session_id=None,
+    username: Optional[str] = None,
+    password: Optional[str] = None,
+    security_token: Optional[str] = None,
+    session_id: Optional[str] = None,
     instance=None,
-    instance_url=None,
+    instance_url: Optional[str] = None,
     organizationId=None,
-    version=DEFAULT_API_VERSION,
+    version: str = DEFAULT_API_VERSION,
     proxies=None,
-    session=None,
-    client_id=None,
-    domain=None,
-    consumer_key=None,
+    session: Optional[httpx.AsyncClient] = None,
+    client_id: Optional[str] = None,
+    domain: Optional[str] = None,
+    consumer_key: Optional[str] = None,
     privatekey_file=None,
     privatekey=None,
 ):
@@ -43,7 +41,7 @@ async def build_async_salesforce_client(
 
         - Async code is not allowed in __init__ method.
         - Also, the original Salesforce client did not store
-        username/password on the instance
+        username/password on the instance.
 
     Thus, this helper functions constructs an instance
     and issues an *async* login call without storing auth parameters
@@ -88,9 +86,9 @@ async def build_async_salesforce_client(
     * version -- the version of the Salesforce API to use, for example
                     `29.0`
     * proxies -- the optional map of scheme to proxy server (note: httpx style!)
-    * session -- Custom httpx session (AsyncClient), created in calling code. This
-                enables the use of httpx AsyncClient features not otherwise
-                exposed by simple_salesforce.
+    * session -- Custom httpx session (AsyncClient), created in calling code.
+                 This enables the use of httpx AsyncClient features not
+                 otherwise exposed by simple_salesforce.
     """
     if domain is None:
         domain = 'login'
@@ -185,11 +183,11 @@ class AsyncSalesforce:
         self,
         version=DEFAULT_API_VERSION,
         proxies=None,
-        session=None,
-        domain=None,
-        auth_type=None,
-        session_id=None,
-        sf_instance=None,
+        session: Optional[httpx.AsyncClient] = None,
+        domain: Optional[str] = None,
+        auth_type: Optional[str] = None,
+        session_id: Optional[str] = None,
+        sf_instance: Optional[str] = None,
     ):
 
         """Initialize the instance with the given parameters.
@@ -202,10 +200,10 @@ class AsyncSalesforce:
                     'login'.
         * version -- the version of the Salesforce API to use, for example
                      `29.0`
-        * proxies -- the optional map of scheme to proxy server (note: httpx style!)
-        * session -- Custom httpx session (AsyncClient), created in calling code. This
-                    enables the use of httpx AsyncClient features not otherwise
-                    exposed by simple_salesforce.
+        * proxies -- the optional map of scheme to proxy server (httpx style)
+        * session -- Custom httpx session (AsyncClient), created in calling code.
+                    This enables the use of httpx AsyncClient features not
+                    otherwise exposed by simple_salesforce.
         """
         # Determine if the user passed in the optional version and/or
         # domain kwargs
@@ -213,13 +211,13 @@ class AsyncSalesforce:
         self.session_id = session_id
         self.sf_instance = sf_instance
         self.sf_version = version
-        self.domain = domain
+        self.domain = domain or ""
         self._session = session
         self._proxies = proxies
         # override custom session proxies dance
-        if proxies is not None and self._session:
-            self._session.proxies = self._proxies = proxies
-        elif proxies:
+        if not self._session and proxies is not None:
+            self._session = httpx.AsyncClient(proxies=proxies)
+        elif proxies and self._session:
             logger.warning(
                 'Proxies must be defined on custom session object, '
                 'ignoring proxies: %s', proxies
@@ -230,7 +228,7 @@ class AsyncSalesforce:
 
         self.headers = {
             'Content-Type': 'application/json',
-            'Authorization': 'Bearer ' + self.session_id,
+            'Authorization': 'Bearer {}'.format(self.session_id or ""),
             'X-PrettyPrint': '1'
         }
 
@@ -254,9 +252,14 @@ class AsyncSalesforce:
         """
         Returns an AsyncClient which can be used as an async context manager
         """
+        if self._proxies and self._session:
+            logger.warning(
+                'Proxies must be defined on custom session object, '
+                'ignoring proxies: %s', self._proxies
+            )
         if self._session:
             return self._session
-        if self._proxies:
+        elif self._proxies:
             return httpx.AsyncClient(proxies=self._proxies)
         return httpx.AsyncClient()
 
@@ -476,9 +479,9 @@ class AsyncSalesforce:
         return result.json(object_pairs_hook=OrderedDict)
 
     async def query_all_iter(self, query, include_deleted=False, **kwargs):
-        """This is a lazy alternative to `query_all` - it does not construct
-        the whole result set into one container, but returns objects from each
-        page it retrieves from the API.
+        """This is an async-generator, lazy alternative to `query_all`:
+        it does not construct the whole result set into one container,
+        but returns objects from each page it retrieves from the API.
 
         Since `query_all` has always been eagerly executed, we reimplemented it
         using `query_all_iter`, only materializing the returned iterator to
@@ -510,9 +513,10 @@ class AsyncSalesforce:
                 return
 
     async def query_all(self, query, include_deleted=False, **kwargs):
-        """Returns the full set of results for the `query`. This is a
-        convenience
-        wrapper around `query(...)` and `query_more(...)`.
+        """Returns the full set of results for the `query`.
+        This is a convenience wrapper around `query(...)` and
+        `query_more(...)`. It calls `query_all_iter` and pages through
+        the results internally.
 
         The returned dict is the decoded JSON payload from the final call to
         Salesforce, but with the `totalSize` field representing the full
@@ -525,10 +529,12 @@ class AsyncSalesforce:
                    SELECT Id FROM Lead WHERE Email = "waldo@somewhere.com"
         * include_deleted -- True if the query should include deleted records.
         """
-
-        records = await self.query_all_iter(query, include_deleted=include_deleted,
-                                            **kwargs)
-        all_records = list(records)
+        all_records = []
+        response = self.query_all_iter(
+            query, include_deleted=include_deleted, **kwargs
+        )
+        async for record in response:
+            all_records.append(record)
         return {
             'records': all_records,
             'totalSize': len(all_records),
@@ -597,7 +603,6 @@ class AsyncSalesforce:
         headers = self.headers.copy()
         additional_headers = kwargs.pop('headers', dict())
         headers.update(additional_headers)
-
         async with self.session as client:
             result = await client.request(
                 method, url, headers=headers, **kwargs
@@ -605,7 +610,6 @@ class AsyncSalesforce:
 
         if result.status_code >= 300:
             exception_handler(result, name=name)
-
         sforce_limit_info = result.headers.get('Sforce-Limit-Info')
         if sforce_limit_info:
             self.api_usage = self.parse_api_usage(sforce_limit_info)
@@ -643,7 +647,7 @@ class AsyncSalesforce:
         return result
 
     # file-based deployment function
-    def deploy(self, zipfile, sandbox, **kwargs):
+    async def deploy(self, zipfile, sandbox, **kwargs):
 
         """Deploy using the Salesforce Metadata API. Wrapper for
         SfdcMetaDataApi.deploy(...).
@@ -665,12 +669,12 @@ class AsyncSalesforce:
                                 metadata_url=self.metadata_url,
                                 api_version=self.sf_version,
                                 headers=self.headers)
-        asyncId, state = mdapi.deploy(zipfile, **kwargs)
+        asyncId, state = await mdapi.deploy(zipfile, **kwargs)
         result = {'asyncId': asyncId, 'state': state}
         return result
 
     # check on a file-based deployment
-    def checkDeployStatus(self, asyncId, sandbox, **kwargs):
+    async def checkDeployStatus(self, asyncId, sandbox, **kwargs):
         """Check on the progress of a file-based deployment via Salesforce
         Metadata API.
         Wrapper for SfdcMetaDataApi.check_deploy_status(...).
@@ -690,14 +694,13 @@ class AsyncSalesforce:
                                 headers=self.headers)
 
         state, state_detail, deployment_detail, unit_test_detail = \
-            mdapi.check_deploy_status(asyncId, **kwargs)
+            await mdapi.check_deploy_status(asyncId, **kwargs)
         results = {
             'state': state,
             'state_detail': state_detail,
             'deployment_detail': deployment_detail,
             'unit_test_detail': unit_test_detail
         }
-
         return results
 
 
@@ -733,8 +736,13 @@ class SFType:
         self._session = session
         self._proxies = proxies
         # don't wipe out original proxies with None
-        if self._session and proxies is not None:
-            self._session.proxies = proxies
+        if not self._session and proxies is not None:
+            self._session = httpx.AsyncClient(proxies=proxies)
+        elif proxies and self._session:
+            logger.warning(
+                'Proxies must be defined on custom session object, '
+                'ignoring proxies: %s', proxies
+            )
         self.api_usage = {}
 
         self.base_url = (
@@ -748,6 +756,11 @@ class SFType:
         """
         Returns an AsyncClient which can be used as an async context manager
         """
+        if self._proxies and self._session:
+            logger.warning(
+                'Proxies must be defined on custom session object, '
+                'ignoring proxies: %s', self._proxies
+            )
         if self._session:
             return self._session
         if self._proxies:
@@ -987,7 +1000,6 @@ class SFType:
 
         if result.status_code >= 300:
             exception_handler(result, self.name)
-
         sforce_limit_info = result.headers.get('Sforce-Limit-Info')
         if sforce_limit_info:
             self.api_usage = AsyncSalesforce.parse_api_usage(sforce_limit_info)

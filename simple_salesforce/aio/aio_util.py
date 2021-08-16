@@ -14,11 +14,11 @@ async def call_salesforce(
     if not async_client:
         async_client = httpx.AsyncClient()
 
+    headers = headers or dict()
     additional_headers = kwargs.pop('additional_headers', dict())
     headers.update(additional_headers or dict())
     async with async_client as client:
         result = await client.request(method, url, headers=headers, **kwargs)
-
     if result.status_code >= 300:
         exception_handler(result)
 

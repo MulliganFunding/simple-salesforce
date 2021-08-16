@@ -2,6 +2,8 @@
 from base64 import b64encode, b64decode
 from xml.etree import ElementTree as ET
 
+import aiofiles
+
 from simple_salesforce.messages import DEPLOY_MSG, CHECK_DEPLOY_STATUS_MSG,\
     CHECK_RETRIEVE_STATUS_MSG, RETRIEVE_MSG
 from .aio_util import call_salesforce
@@ -56,7 +58,7 @@ class SfdcMetadataApi:
             'client': client,
             'checkOnly': checkOnly,
             'sessionId': self._session_id,
-            'ZipFile': self._read_deploy_zip(zipfile),
+            'ZipFile': await self._read_deploy_zip(zipfile),
             'testLevel': testLevel,
             'tests': tests,
             'ignoreWarnings': ignoreWarnings,
@@ -106,7 +108,7 @@ class SfdcMetadataApi:
 
     @staticmethod
     # pylint: disable=R1732
-    def _read_deploy_zip(zipfile):
+    async def _read_deploy_zip(zipfile):
         """
         :param zipfile:
         :type zipfile:
@@ -115,12 +117,12 @@ class SfdcMetadataApi:
         """
         if hasattr(zipfile, 'read'):
             file = zipfile
-            file.seek(0)
+            await file.seek(0)
             should_close = False
         else:
-            file = open(zipfile, 'rb')
+            file = await aiofiles.open(zipfile, 'rb')
             should_close = True
-        raw = file.read()
+        raw = await file.read()
         if should_close:
             file.close()
         return b64encode(raw).decode("utf-8")

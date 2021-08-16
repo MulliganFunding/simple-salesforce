@@ -27,13 +27,17 @@ setup(
     long_description_content_type='text/x-rst',
     install_requires=[
         'requests>=2.22.0',
-        'httpx>=0.18.2,<1.0'
         'authlib'
     ],
+    extras_require={
+        "async": ['httpx>=0.18.2,<1.0', 'aiofiles>=0.7.0']
+    },
     tests_require=[
         'nose>=1.3.0',
         'pytz>=2014.1.1',
         'responses>=0.5.1',
+        'pytest',
+        'pytest-asyncio-0.15.1'
     ],
     test_suite='nose.collector',
     keywords=about['__keywords__'],
