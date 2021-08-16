@@ -1,4 +1,4 @@
-"""Login classes and functions for Simple-Salesforce
+"""Async Login classes and functions for Simple-Salesforce
 
 Heavily Modified from RestForce 1.0.0
 """
@@ -19,7 +19,7 @@ from simple_salesforce.util import getUniqueElementValueFromXmlString
 
 
 # pylint: disable=invalid-name,too-many-arguments,too-many-locals
-async def SalesforceLogin(
+async def AsyncSalesforceLogin(
     username=None,
     password=None,
     security_token=None,

@@ -1,9 +1,8 @@
-""" Classes for interacting with Salesforce Bulk API """
-
+"""Async Classes for interacting with Salesforce Bulk API """
+import asyncio
 import json
 from collections import OrderedDict
-from time import sleep
-import concurrent.futures
+import logging
 from functools import partial
 
 import httpx
@@ -12,7 +11,11 @@ from simple_salesforce.util import list_from_generator
 from .aio_util import call_salesforce
 
 
-class SFBulkHandler:
+# pylint: disable=invalid-name
+logger = logging.getLogger(__name__)
+
+
+class AsyncSFBulkHandler:
     """ Bulk API request handler
     Intermediate class which allows us to use commands,
      such as 'sf.bulk.Contacts.create(...)'
@@ -36,10 +39,13 @@ class SFBulkHandler:
         self._session = session
         self.bulk_url = bulk_url
         # don't wipe out original proxies with None
-        if not session and proxies is not None:
-            self._proxies = proxies
-        elif session and proxies is not None:
-            self._session.proxies = proxies
+        if not self._session and proxies is not None:
+            self._session = httpx.AsyncClient(proxies=proxies)
+        elif proxies and self._session:
+            logger.warning(
+                'Proxies must be defined on custom session object, '
+                'ignoring proxies: %s', proxies
+            )
 
         # Define these headers separate from Salesforce class,
         # as bulk uses a slightly different format
@@ -50,11 +56,15 @@ class SFBulkHandler:
             }
 
     def __getattr__(self, name):
-        return SFBulkType(object_name=name, bulk_url=self.bulk_url,
-                          headers=self.headers, session=self._session)
+        return AsyncSFBulkType(
+            object_name=name,
+            bulk_url=self.bulk_url,
+            headers=self.headers,
+            session=self._session
+        )
 
 
-class SFBulkType:
+class AsyncSFBulkType:
     """ Interface to Bulk/Async API functions"""
 
     def __init__(self, object_name, bulk_url, headers, session):
@@ -111,7 +121,9 @@ class SFBulkType:
         url = "{}{}".format(self.bulk_url, 'job')
 
         result = await call_salesforce(
-            url=url, method='POST', session=self.session,
+            url=url,
+            method='POST',
+            session=self.session,
             headers=self.headers,
             data=json.dumps(payload, allow_nan=False)
         )
@@ -126,7 +138,9 @@ class SFBulkType:
         url = "{}{}{}".format(self.bulk_url, 'job/', job_id)
 
         result = await call_salesforce(
-            url=url, method='POST', session=self.session,
+            url=url,
+            method='POST',
+            session=self.session,
             headers=self.headers,
             data=json.dumps(payload, allow_nan=False)
         )
@@ -137,8 +151,7 @@ class SFBulkType:
         url = "{}{}{}".format(self.bulk_url, 'job/', job_id)
 
         result = await call_salesforce(
-            url=url, method='GET', session=self.session,
-            headers=self.headers
+            url=url, method='GET', session=self.session, headers=self.headers
         )
         return result.json(object_pairs_hook=OrderedDict)
 
@@ -154,8 +167,11 @@ class SFBulkType:
             data = json.dumps(data, allow_nan=False)
 
         result = await call_salesforce(
-            url=url, method='POST', session=self.session,
-            headers=self.headers, data=data
+            url=url,
+            method='POST',
+            session=self.session,
+            headers=self.headers,
+            data=data
         )
         return result.json(object_pairs_hook=OrderedDict)
 
@@ -195,30 +211,45 @@ class SFBulkType:
         else:
             yield result.json()
 
-    def worker(self, batch, operation, wait=5):
+    async def worker(self, batch, operation, wait=5):
         """ Gets batches from concurrent worker threads.
         self._bulk_operation passes batch jobs.
         The worker function checks each batch job waiting for it complete
         and appends the results.
         """
 
-        batch_status = self._get_batch(job_id=batch['jobId'],
-                                       batch_id=batch['id'])['state']
+        batch_res = await self._get_batch(
+            job_id=batch['jobId'], batch_id=batch['id']
+        )
+        batch_status = batch_res['state']
 
         while batch_status not in ['Completed', 'Failed', 'Not Processed']:
-            sleep(wait)
-            batch_status = self._get_batch(job_id=batch['jobId'],
-                                           batch_id=batch['id'])['state']
+            await asyncio.sleep(wait)
+            batch_res = await self._get_batch(
+                job_id=batch['jobId'], batch_id=batch['id']
+            )
+            batch_status = batch_res['state']
 
-        batch_results = self._get_batch_results(job_id=batch['jobId'],
-                                                batch_id=batch['id'],
-                                                operation=operation)
+        batch_results = []
+        async for batch_res in self._get_batch_results(
+            job_id=batch['jobId'],
+            batch_id=batch['id'],
+            operation=operation
+        ):
+            batch_results.append(batch_res)
         result = batch_results
         return result
 
     # pylint: disable=R0913
-    def _bulk_operation(self, operation, data, use_serial=False,
-                        external_id_field=None, batch_size=10000, wait=5):
+    async def _bulk_operation(
+        self,
+        operation,
+        data,
+        use_serial=False,
+        external_id_field=None,
+        batch_size=10000,
+        wait=5
+    ):
         """ String together helper functions to create a complete
         end-to-end bulk API request
         Arguments:
@@ -234,100 +265,137 @@ class SFBulkType:
             # Checks to prevent batch limit
             if len(data) >= 10000 and batch_size > 10000:
                 batch_size = 10000
-            with concurrent.futures.ThreadPoolExecutor() as pool:
 
-                job = self._create_job(operation=operation,
-                                       use_serial=use_serial,
-                                       external_id_field=external_id_field)
-                batches = [
-                    self._add_batch(job_id=job['id'], data=i,
-                                    operation=operation)
-                    for i in
-                    [data[i * batch_size:(i + 1) * batch_size]
-                     for i in range((len(data) // batch_size + 1))] if i]
+            job = await self._create_job(
+                operation=operation,
+                use_serial=use_serial,
+                external_id_field=external_id_field
+            )
+            batches = [
+                self._add_batch(job_id=job['id'], data=i,
+                                operation=operation)
+                for i in
+                [data[i * batch_size:(i + 1) * batch_size]
+                    for i in range((len(data) // batch_size + 1))] if i]
 
-                multi_thread_worker = partial(self.worker, operation=operation)
-                list_of_results = pool.map(multi_thread_worker, batches)
+            batch_results = await asyncio.gather(*batches)
+            worker = partial(self.worker, operation=operation, wait=wait)
+            list_of_results = await asyncio.gather(
+                *(map(worker, batch_results))
+            )
 
-                results = [x for sublist in list_of_results for i in
-                           sublist for x in i]
-
-                self._close_job(job_id=job['id'])
+            results = [
+                x for sublist in list_of_results
+                for i in sublist for x in i
+            ]
+            await self._close_job(job_id=job['id'])
 
         elif operation in ('query', 'queryAll'):
-            job = self._create_job(operation=operation,
-                                   use_serial=use_serial,
-                                   external_id_field=external_id_field)
+            job = await self._create_job(
+                operation=operation,
+                use_serial=use_serial,
+                external_id_field=external_id_field
+            )
 
-            batch = self._add_batch(job_id=job['id'], data=data,
-                                    operation=operation)
+            batch = await self._add_batch(
+                job_id=job['id'], data=data, operation=operation
+            )
+            await self._close_job(job_id=job['id'])
 
-            self._close_job(job_id=job['id'])
-
-            batch_status = self._get_batch(job_id=batch['jobId'],
-                                           batch_id=batch['id'])['state']
+            batch_res = await self._get_batch(
+                job_id=batch['jobId'], batch_id=batch['id']
+            )
+            batch_status = batch_res['state']
 
             while batch_status not in ['Completed', 'Failed', 'Not Processed']:
-                sleep(wait)
-                batch_status = self._get_batch(job_id=batch['jobId'],
-                                               batch_id=batch['id'])['state']
+                await asyncio.sleep(wait)
+                batch_res = await self._get_batch(
+                    job_id=batch['jobId'],
+                    batch_id=batch['id']
+                )
+                batch_status = batch_res['state']
 
-            results = self._get_batch_results(job_id=batch['jobId'],
-                                              batch_id=batch['id'],
-                                              operation=operation)
+            results = []
+            async for res in self._get_batch_results(
+                job_id=batch['jobId'],
+                batch_id=batch['id'],
+                operation=operation
+            ):
+                results.append(res)
+
         return results
 
     # _bulk_operation wrappers to expose supported Salesforce bulk operations
-    def delete(self, data, batch_size=10000, use_serial=False):
+    async def delete(self, data, batch_size=10000, use_serial=False, wait=5):
         """ soft delete records """
-        results = self._bulk_operation(use_serial=use_serial,
-                                       operation='delete', data=data,
-                                       batch_size=batch_size)
+        results = await self._bulk_operation(
+            use_serial=use_serial,
+            operation='delete',
+            data=data,
+            batch_size=batch_size,
+            wait=wait
+        )
         return results
 
-    def insert(self, data, batch_size=10000,
-               use_serial=False):
+    async def insert(self, data, batch_size=10000, use_serial=False, wait=5):
         """ insert records """
-        results = self._bulk_operation(use_serial=use_serial,
-                                       operation='insert', data=data,
-                                       batch_size=batch_size)
+        results = await self._bulk_operation(
+            use_serial=use_serial,
+            operation='insert',
+            data=data,
+            batch_size=batch_size,
+            wait=wait
+        )
         return results
 
-    def upsert(self, data, external_id_field, batch_size=10000,
-               use_serial=False):
+    async def upsert(
+        self, data, external_id_field, batch_size=10000, use_serial=False, wait=5
+    ):
         """ upsert records based on a unique identifier """
-        results = self._bulk_operation(use_serial=use_serial,
-                                       operation='upsert',
-                                       external_id_field=external_id_field,
-                                       data=data, batch_size=batch_size)
+        results = await self._bulk_operation(
+            use_serial=use_serial,
+            operation='upsert',
+            external_id_field=external_id_field,
+            data=data,
+            batch_size=batch_size,
+            wait=wait
+        )
         return results
 
-    def update(self, data, batch_size=10000, use_serial=False):
+    async def update(self, data, batch_size=10000, use_serial=False, wait=5):
         """ update records """
-        results = self._bulk_operation(use_serial=use_serial,
-                                       operation='update', data=data,
-                                       batch_size=batch_size)
+        results = await self._bulk_operation(
+            use_serial=use_serial,
+            operation='update',
+            data=data,
+            batch_size=batch_size,
+            wait=wait
+        )
         return results
 
-    def hard_delete(self, data, batch_size=10000, use_serial=False):
+    async def hard_delete(self, data, batch_size=10000, use_serial=False, wait=5):
         """ hard delete records """
-        results = self._bulk_operation(use_serial=use_serial,
-                                       operation='hardDelete', data=data,
-                                       batch_size=batch_size)
+        results = await self._bulk_operation(
+            use_serial=use_serial,
+            operation='hardDelete',
+            data=data,
+            batch_size=batch_size,
+            wait=wait
+        )
         return results
 
-    def query(self, data, lazy_operation=False):
+    async def query(self, data, lazy_operation=False, wait=5):
         """ bulk query """
-        results = self._bulk_operation(operation='query', data=data)
+        results = await self._bulk_operation(operation='query', data=data, wait=wait)
 
         if lazy_operation:
             return results
 
         return list_from_generator(results)
 
-    def query_all(self, data, lazy_operation=False):
+    async def query_all(self, data, lazy_operation=False, wait=5):
         """ bulk queryAll """
-        results = self._bulk_operation(operation='queryAll', data=data)
+        results = await self._bulk_operation(operation='queryAll', data=data, wait=wait)
 
         if lazy_operation:
             return results

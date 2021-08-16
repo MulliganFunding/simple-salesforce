@@ -6,6 +6,8 @@ from unittest import mock
 import httpx
 import pytest
 
+from simple_salesforce.aio import AsyncSalesforce
+
 
 SESSION_ID = '12345'
 INSTANCE_URL = 'https://na15.salesforce.com'
@@ -162,3 +164,21 @@ def mock_httpx_client(monkeypatch):
     monkeypatch.setattr(httpx, "AsyncClient", mock_httpx.AsyncClient)
 
     return mock_httpx, mock_client, inner
+
+
+# pylint: disable=unused-argument
+# pylint: disable=redefined-outer-name
+@pytest.fixture()
+def sf_client(constants, mock_httpx_client):
+    """Simple fixture for crafting the client used below"""
+    client = AsyncSalesforce(
+        session_id=constants["SESSION_ID"],
+        proxies=constants["PROXIES"]
+    )
+    client.headers = {}
+    client.base_url = 'https://localhost/'
+    client.metadata_url = 'https://localhost/metadata/'
+    client.bulk_url = 'https://localhost/async/'
+    client.apex_url = 'https://localhost/apexrest/'
+    client.tooling_url = 'https://localhost/tooling/'
+    return client

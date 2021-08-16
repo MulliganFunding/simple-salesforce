@@ -1,4 +1,4 @@
-"""Core classes and exceptions for Simple-Salesforce"""
+"""Async classes and exceptions for Simple-Salesforce API"""
 import json
 import logging
 import re
@@ -11,9 +11,9 @@ import httpx
 from simple_salesforce.api import DEFAULT_API_VERSION,  PerAppUsage, Usage
 from simple_salesforce.exceptions import SalesforceGeneralError
 from simple_salesforce.util import date_to_iso8601, exception_handler
-from .bulk import SFBulkHandler
-from .login import SalesforceLogin
-from .metadata import SfdcMetadataApi
+from .bulk import AsyncSFBulkHandler
+from .login import AsyncSalesforceLogin
+from .metadata import AsyncSfdcMetadataApi
 
 # pylint: disable=invalid-name
 logger = logging.getLogger(__name__)
@@ -109,7 +109,7 @@ async def build_async_salesforce_client(
         instance_kwargs["auth_type"] = "password"
 
         # Pass along the username/password to our login helper
-        session_id, sf_instance = await SalesforceLogin(
+        session_id, sf_instance = await AsyncSalesforceLogin(
             session=session,
             username=username,
             password=password,
@@ -138,7 +138,7 @@ async def build_async_salesforce_client(
         instance_kwargs["auth_type"] = 'ipfilter'
 
         # Pass along the username/password to our login helper
-        session_id, sf_instance = await SalesforceLogin(
+        session_id, sf_instance = await AsyncSalesforceLogin(
             session=session,
             username=username,
             password=password,
@@ -155,7 +155,7 @@ async def build_async_salesforce_client(
         instance_kwargs["auth_type"] = "jwt-bearer"
 
         # Pass along the username/password to our login helper
-        session_id, sf_instance = await SalesforceLogin(
+        session_id, sf_instance = await AsyncSalesforceLogin(
             session=session,
             username=username,
             consumer_key=consumer_key,
@@ -295,12 +295,12 @@ class AsyncSalesforce:
 
     # SObject Handler
     def __getattr__(self, name):
-        """Returns an `SFType` instance for the given Salesforce object type
+        """Returns an `AsyncSFType` instance for the given Salesforce object type
         (given in `name`).
 
         The magic part of the SalesforceAPI, this function translates
         calls such as `salesforce_api_instance.Lead.metadata()` into fully
-        constituted `SFType` instances to make a nice Python API wrapper
+        constituted `AsyncSFType` instances to make a nice Python API wrapper
         for the REST API.
 
         Arguments:
@@ -315,10 +315,11 @@ class AsyncSalesforce:
 
         if name == 'bulk':
             # Deal with bulk API functions
-            return SFBulkHandler(self.session_id, self.bulk_url, self._proxies,
-                                 self._session)
+            return AsyncSFBulkHandler(
+                self.session_id, self.bulk_url, self._proxies, self._session
+            )
 
-        return SFType(
+        return AsyncSFType(
             name, self.session_id, self.sf_instance, sf_version=self.sf_version,
             proxies=self._proxies, session=self._session)
 
@@ -665,7 +666,7 @@ class AsyncSalesforce:
 
         Returns a process id and state for this deployment.
         """
-        mdapi = SfdcMetadataApi(session=self.session,
+        mdapi = AsyncSfdcMetadataApi(session=self.session,
                                 session_id=self.session_id,
                                 instance=self.sf_instance,
                                 sandbox=sandbox,
@@ -688,7 +689,7 @@ class AsyncSalesforce:
 
         Returns status of the deployment the asyncId given.
         """
-        mdapi = SfdcMetadataApi(session=self.session,
+        mdapi = AsyncSfdcMetadataApi(session=self.session,
                                 session_id=self.session_id,
                                 instance=self.sf_instance,
                                 sandbox=sandbox,
@@ -707,7 +708,7 @@ class AsyncSalesforce:
         return results
 
 
-class SFType:
+class AsyncSFType:
     """An interface to a specific type of SObject"""
 
     # pylint: disable=too-many-arguments
@@ -833,7 +834,7 @@ class SFType:
         return result.json(object_pairs_hook=OrderedDict)
 
     async def get_by_custom_id(self, custom_id_field, custom_id, headers=None):
-        """Return an ``SFType`` by custom ID
+        """Return an ``AsyncSFType`` by custom ID
 
         Returns the result of a GET to
         `.../{object_name}/{custom_id_field}/{custom_id}` as a dict decoded

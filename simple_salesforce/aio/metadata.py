@@ -1,4 +1,4 @@
-""" Class to work with Salesforce Metadata API """
+"""Async Class to work with Salesforce Metadata API """
 from base64 import b64encode, b64decode
 from xml.etree import ElementTree as ET
 
@@ -9,7 +9,7 @@ from simple_salesforce.messages import DEPLOY_MSG, CHECK_DEPLOY_STATUS_MSG,\
 from .aio_util import call_salesforce
 
 
-class SfdcMetadataApi:
+class AsyncSfdcMetadataApi:
     # pylint: disable=too-many-instance-attributes
     """ Class to work with Salesforce Metadata API """
     _METADATA_API_BASE_URI = "/services/Soap/m/{version}"
@@ -124,7 +124,7 @@ class SfdcMetadataApi:
             should_close = True
         raw = await file.read()
         if should_close:
-            file.close()
+            await file.close()
         return b64encode(raw).decode("utf-8")
 
     async def _retrieve_deploy_result(self, async_process_id, **kwargs):

@@ -12,7 +12,7 @@ import pytest
 
 from simple_salesforce.api import PerAppUsage, Usage
 from simple_salesforce.aio.api import (
-    build_async_salesforce_client, AsyncSalesforce, SFType
+    build_async_salesforce_client, AsyncSalesforce, AsyncSFType
 )
 from simple_salesforce.exceptions import SalesforceGeneralError
 from simple_salesforce.util import date_to_iso8601
@@ -23,7 +23,7 @@ CASE_URL = DEFAULT_URL.format("Case")
 
 # # # # # # # # # # # # # # # # # # # # # #
 #
-# SFType Tests
+# AsyncSFType Tests
 #
 # # # # # # # # # # # # # # # # # # # # # #
 
@@ -33,8 +33,8 @@ def _create_sf_type(
         session_id='5',
         sf_instance='my.salesforce.com'
         ):
-    """Creates SFType instances"""
-    return SFType(
+    """Creates AsyncSFType instances"""
+    return AsyncSFType(
         object_name=object_name,
         session_id=session_id,
         sf_instance=sf_instance,
@@ -475,7 +475,7 @@ def test_client_custom_version():
 
 def test_custom_session_to_sftype(constants):
     """
-    Check session gets passed to SFType
+    Check session gets passed to AsyncSFType
     """
     mock_sesh = mock.AsyncMock()
     mock_sesh.custom_session_attrib = "X-1-2-3"
@@ -490,7 +490,7 @@ def test_custom_session_to_sftype(constants):
 # pylint: disable=protected-access
 def test_proxies_inherited_by_default(constants):
     """
-    Check session gets passed to SFType and proxies are inherited
+    Check session gets passed to AsyncSFType and proxies are inherited
     """
     client = AsyncSalesforce(
         session_id=constants["SESSION_ID"],
@@ -507,20 +507,6 @@ def test_proxies_inherited_by_default(constants):
     # assert client.session._mounts == client.Contact.session._mounts
     assert client._proxies == client.Contact._proxies == constants["PROXIES"]
     # assert not no_proxies_client.session._mounts
-
-
-# pylint: disable=unused-argument
-@pytest.fixture()
-def sf_client(constants, mock_httpx_client):
-    """Simple fixture for crafting the client used below"""
-    client = AsyncSalesforce(
-        session_id=constants["SESSION_ID"],
-        proxies=constants["PROXIES"]
-    )
-    client.headers = {}
-    client.base_url = 'https://localhost/'
-    client.metadata_url = 'https://localhost/metadata/'
-    return client
 
 
 @pytest.mark.asyncio

@@ -1,15 +1,21 @@
 """Utility functions for simple-salesforce async calls"""
+from typing import Dict, Optional
+
 import httpx
 
 from simple_salesforce.util import exception_handler
 
 
 async def call_salesforce(
-    url=None, method=None, async_client=None, headers=None, **kwargs
+    url: str = "",
+    method: str = "GET",
+    async_client: Optional[httpx.AsyncClient] = None,
+    headers: Optional[Dict] = None,
+    **kwargs
 ):
     """Utility method for performing HTTP call to Salesforce.
 
-    Returns a `requests.result` object.
+    Returns a `httpx.Response` object.
     """
     if not async_client:
         async_client = httpx.AsyncClient()
