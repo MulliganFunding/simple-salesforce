@@ -5,7 +5,11 @@ This file shamelessly taken from the requests library"""
 __title__ = 'simple-salesforce'
 __description__ = 'A basic Salesforce.com REST API client.'
 __url__ = 'https://github.com/simple-salesforce/simple-salesforce'
+<<<<<<< HEAD
 __version__ = '1.12.1'
+=======
+__version__ = '1.12.1a1'
+>>>>>>> 51063a6 (Use async-alpha version for our fork)
 __author__ = 'Nick Catalano'
 __author_email__ = 'nickcatal@gmail.com'
 __license__ = 'Apache 2.0'

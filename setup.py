@@ -19,7 +19,11 @@ setup(
     author_email=about['__author_email__'],
     maintainer=about['__maintainer__'],
     maintainer_email=about['__maintainer_email__'],
+<<<<<<< HEAD
     packages=['simple_salesforce', ],
+=======
+    packages=['simple_salesforce', 'simple_salesforce.aio'],
+>>>>>>> 51063a6 (Use async-alpha version for our fork)
     url=about['__url__'],
     license=about['__license__'],
     description=about['__description__'],
