@@ -401,7 +401,7 @@ class AsyncSalesforce:
 
         return json_result
 
-    def quick_search(self, search):
+    async def quick_search(self, search):
         """Returns the result of a Salesforce search as a dict decoded from
         the Salesforce response JSON payload.
 
@@ -412,7 +412,7 @@ class AsyncSalesforce:
                     sent to Salesforce
         """
         search_string = 'FIND {{{search_string}}}'.format(search_string=search)
-        return self.search(search_string)
+        return await self.search(search_string)
 
     async def limits(self, **kwargs):
         """Return the result of a Salesforce request to list Organization
@@ -666,13 +666,15 @@ class AsyncSalesforce:
 
         Returns a process id and state for this deployment.
         """
-        mdapi = AsyncSfdcMetadataApi(session=self.session,
-                                session_id=self.session_id,
-                                instance=self.sf_instance,
-                                sandbox=sandbox,
-                                metadata_url=self.metadata_url,
-                                api_version=self.sf_version,
-                                headers=self.headers)
+        mdapi = AsyncSfdcMetadataApi(
+            session=self.session,
+            session_id=self.session_id,
+            instance=self.sf_instance,
+            sandbox=sandbox,
+            metadata_url=self.metadata_url,
+            api_version=self.sf_version,
+            headers=self.headers
+        )
         asyncId, state = await mdapi.deploy(zipfile, **kwargs)
         result = {'asyncId': asyncId, 'state': state}
         return result
@@ -689,14 +691,15 @@ class AsyncSalesforce:
 
         Returns status of the deployment the asyncId given.
         """
-        mdapi = AsyncSfdcMetadataApi(session=self.session,
-                                session_id=self.session_id,
-                                instance=self.sf_instance,
-                                sandbox=sandbox,
-                                metadata_url=self.metadata_url,
-                                api_version=self.sf_version,
-                                headers=self.headers)
-
+        mdapi = AsyncSfdcMetadataApi(
+            session=self.session,
+            session_id=self.session_id,
+            instance=self.sf_instance,
+            sandbox=sandbox,
+            metadata_url=self.metadata_url,
+            api_version=self.sf_version,
+            headers=self.headers
+        )
         state, state_detail, deployment_detail, unit_test_detail = \
             await mdapi.check_deploy_status(asyncId, **kwargs)
         results = {
@@ -779,7 +782,9 @@ class AsyncSFType:
 
         * headers -- a dict with additional request headers.
         """
-        result = await self._call_salesforce('GET', self.base_url, headers=headers)
+        result = await self._call_salesforce(
+            'GET', self.base_url, headers=headers
+        )
         return result.json(object_pairs_hook=OrderedDict)
 
     async def describe(self, headers=None):
