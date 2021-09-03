@@ -214,10 +214,11 @@ async def soap_login(soap_url, request_body, headers, proxies, session=None):
     else:
         client = httpx.AsyncClient()
 
-    async with client:
-        response = await client.post(
-            soap_url, data=request_body, headers=headers
-        )
+    response = await client.post(
+        soap_url, data=request_body, headers=headers
+    )
+    if not session:
+        await client.aclose()
 
     if response.status_code != 200:
         except_code = getUniqueElementValueFromXmlString(
@@ -251,10 +252,11 @@ async def token_login(
     else:
         client = httpx.AsyncClient()
 
-    async with client:
-        response = await client.post(
-            token_url, data=token_data, headers=headers
-        )
+    response = await client.post(
+        token_url, data=token_data, headers=headers
+    )
+    if not session:
+        await client.aclose()
 
     try:
         json_response = response.json()

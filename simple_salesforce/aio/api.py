@@ -173,8 +173,46 @@ async def build_async_salesforce_client(
     return AsyncSalesforce(**instance_kwargs)
 
 
+class SessionMixin:
+    """
+    This mixin offers a convenient way to use a shared session object.
+    """
+    async def close_session(self):
+        """
+        Offer users a method to _close_ a session.
+        """
+        if (
+            getattr(self, "_session")
+            and self._session
+            and hasattr(self._session, "aclose")
+        ):
+            await self._session.aclose()
+            self._session = None
+
+    @property
+    def session(self):
+        """
+        Ensures that an AsyncClient is stashed on the object
+        in order to reuse connections.
+
+        Users are responsible for closing connections.
+        """
+        if self._proxies and self._session:
+            logger.warning(
+                'Proxies must be defined on custom session object, '
+                'ignoring proxies: %s', self._proxies
+            )
+        if self._session:
+            return self._session
+        if self._proxies:
+            self._session = httpx.AsyncClient(proxies=self._proxies)
+        else:
+            self._session = httpx.AsyncClient()
+        return self._session
+
+
 # pylint: disable=too-many-instance-attributes
-class AsyncSalesforce:
+class AsyncSalesforce(SessionMixin):
     """Salesforce Instance
 
     An instance of AsyncSalesforce is a handy way to wrap a Salesforce session
@@ -250,22 +288,6 @@ class AsyncSalesforce:
 
         self.api_usage = {}
 
-    @property
-    def session(self):
-        """
-        Returns an AsyncClient which can be used as an async context manager
-        """
-        if self._proxies and self._session:
-            logger.warning(
-                'Proxies must be defined on custom session object, '
-                'ignoring proxies: %s', self._proxies
-            )
-        if self._session:
-            return self._session
-        elif self._proxies:
-            return httpx.AsyncClient(proxies=self._proxies)
-        return httpx.AsyncClient()
-
     async def describe(self, **kwargs):
         """Describes all available objects
 
@@ -274,7 +296,9 @@ class AsyncSalesforce:
         * keyword arguments supported by requests.request (e.g. json, timeout)
         """
         url = self.base_url + "sobjects"
-        result = await self._call_salesforce('GET', url, name='describe', **kwargs)
+        result = await self._call_salesforce(
+            'GET', url, name='describe', **kwargs
+        )
 
         json_result = result.json(object_pairs_hook=OrderedDict)
         if len(json_result) == 0:
@@ -393,7 +417,9 @@ class AsyncSalesforce:
 
         # `requests` will correctly encode the query string passed as `params`
         params = {'q': search}
-        result = await self._call_salesforce('GET', url, name='search', params=params)
+        result = await self._call_salesforce(
+            'GET', url, name='search', params=params
+        )
 
         json_result = result.json(object_pairs_hook=OrderedDict)
         if len(json_result) == 0:
@@ -607,10 +633,9 @@ class AsyncSalesforce:
         headers = self.headers.copy()
         additional_headers = kwargs.pop('headers', dict())
         headers.update(additional_headers)
-        async with self.session as client:
-            result = await client.request(
-                method, url, headers=headers, **kwargs
-            )
+        result = await self.session.request(
+            method, url, headers=headers, **kwargs
+        )
 
         if result.status_code >= 300:
             exception_handler(result, name=name)
@@ -711,7 +736,7 @@ class AsyncSalesforce:
         return results
 
 
-class AsyncSFType:
+class AsyncSFType(SessionMixin):
     """An interface to a specific type of SObject"""
 
     # pylint: disable=too-many-arguments
@@ -757,22 +782,6 @@ class AsyncSFType:
             '/{object_name}/'.format(instance=sf_instance,
                                      object_name=object_name,
                                      sf_version=sf_version))
-
-    @property
-    def session(self):
-        """
-        Returns an AsyncClient which can be used as an async context manager
-        """
-        if self._proxies and self._session:
-            logger.warning(
-                'Proxies must be defined on custom session object, '
-                'ignoring proxies: %s', self._proxies
-            )
-        if self._session:
-            return self._session
-        if self._proxies:
-            return httpx.AsyncClient(proxies=self._proxies)
-        return httpx.AsyncClient()
 
     async def metadata(self, headers=None):
         """Returns the result of a GET to `.../{object_name}/` as a dict
@@ -1002,10 +1011,9 @@ class AsyncSFType:
         }
         additional_headers = kwargs.pop('headers', dict())
         headers.update(additional_headers or dict())
-        async with self.session as client:
-            result = await client.request(
-                method, url, headers=headers, **kwargs
-            )
+        result = await self.session.request(
+            method, url, headers=headers, **kwargs
+        )
 
         if result.status_code >= 300:
             exception_handler(result, self.name)

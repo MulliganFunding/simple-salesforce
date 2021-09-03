@@ -23,9 +23,10 @@ async def call_salesforce(
     headers = headers or dict()
     additional_headers = kwargs.pop('additional_headers', dict())
     headers.update(additional_headers or dict())
-    async with async_client as client:
-        result = await client.request(method, url, headers=headers, **kwargs)
+    result = await async_client.request(method, url, headers=headers, **kwargs)
     if result.status_code >= 300:
         exception_handler(result)
+    if not async_client:
+        await async_client.aclose()
 
     return result
