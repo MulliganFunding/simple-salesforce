@@ -130,6 +130,10 @@ async def build_async_salesforce_client(
         # interface for example) extract the hostname (which we rely on)
         if instance_url is not None:
             instance_kwargs["sf_instance"] = urlparse(instance_url).hostname
+            port = urlparse(instance_url).port
+            if port not in (None, 443):
+                instance_kwargs["sf_instance"] += ':' + str(port)
+            instance_kwargs["sf_instance"] = urlparse(instance_url).hostname
         else:
             instance_kwargs["sf_instance"] = instance
 
