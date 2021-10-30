@@ -7,12 +7,15 @@ from functools import partial
 
 import httpx
 
+from simple_salesforce.exceptions import SalesforceGeneralError
 from simple_salesforce.util import list_from_generator
 from .aio_util import call_salesforce
 
 
 # pylint: disable=invalid-name
 logger = logging.getLogger(__name__)
+
+BATCH_FINISH_STATES = set(('Completed', 'Failed', 'Not Processed'))
 
 
 class AsyncSFBulkHandler:
@@ -218,17 +221,15 @@ class AsyncSFBulkType:
         and appends the results.
         """
 
-        batch_res = await self._get_batch(
+        batch_status = await self._get_batch(
             job_id=batch['jobId'], batch_id=batch['id']
         )
-        batch_status = batch_res['state']
 
-        while batch_status not in ['Completed', 'Failed', 'Not Processed']:
+        while batch_status['state'] not in BATCH_FINISH_STATES:
             await asyncio.sleep(wait)
-            batch_res = await self._get_batch(
+            batch_status = await self._get_batch(
                 job_id=batch['jobId'], batch_id=batch['id']
             )
-            batch_status = batch_res['state']
 
         batch_results = []
         async for batch_res in self._get_batch_results(
@@ -302,18 +303,20 @@ class AsyncSFBulkType:
             )
             await self._close_job(job_id=job['id'])
 
-            batch_res = await self._get_batch(
+            batch_status = await self._get_batch(
                 job_id=batch['jobId'], batch_id=batch['id']
             )
-            batch_status = batch_res['state']
-
-            while batch_status not in ['Completed', 'Failed', 'Not Processed']:
+            while batch_status['state'] not in BATCH_FINISH_STATES:
                 await asyncio.sleep(wait)
-                batch_res = await self._get_batch(
+                batch_status = await self._get_batch(
                     job_id=batch['jobId'],
                     batch_id=batch['id']
                 )
-                batch_status = batch_res['state']
+            if batch_status['state'] == 'Failed':
+                raise SalesforceGeneralError('',
+                                             batch_status['state'],
+                                             batch_status['jobId'],
+                                             batch_status['stateMessage'])
 
             results = []
             async for res in self._get_batch_results(
