@@ -8,7 +8,7 @@ from urllib.parse import urljoin, urlparse
 
 import httpx
 
-from simple_salesforce.api import DEFAULT_API_VERSION,  PerAppUsage, Usage
+from simple_salesforce.api import DEFAULT_API_VERSION, PerAppUsage, Usage
 from simple_salesforce.exceptions import SalesforceGeneralError
 from simple_salesforce.util import date_to_iso8601, exception_handler
 from .bulk import AsyncSFBulkHandler
@@ -91,7 +91,7 @@ async def build_async_salesforce_client(
                  otherwise exposed by simple_salesforce.
     """
     if domain is None:
-        domain = 'login'
+        domain = "login"
     if session is None:
         session = httpx.AsyncClient(proxies=proxies)
 
@@ -99,13 +99,12 @@ async def build_async_salesforce_client(
         "version": version,
         "proxies": proxies,
         "session": session,
-        "domain": domain
+        "domain": domain,
     }
 
     # Determine if the user wants to use our username/password auth or pass
     # in their own information
-    if all(arg is not None for arg in (
-            username, password, security_token)):
+    if all(arg is not None for arg in (username, password, security_token)):
         instance_kwargs["auth_type"] = "password"
 
         # Pass along the username/password to our login helper
@@ -117,12 +116,12 @@ async def build_async_salesforce_client(
             sf_version=version,
             proxies=proxies,
             client_id=client_id,
-            domain=domain)
+            domain=domain,
+        )
         instance_kwargs["session_id"] = session_id
         instance_kwargs["sf_instance"] = sf_instance
 
-    elif all(arg is not None for arg in (
-            session_id, instance or instance_url)):
+    elif all(arg is not None for arg in (session_id, instance or instance_url)):
         instance_kwargs["auth_type"] = "direct"
         instance_kwargs["session_id"] = session_id
 
@@ -132,14 +131,13 @@ async def build_async_salesforce_client(
             instance_kwargs["sf_instance"] = urlparse(instance_url).hostname
             port = urlparse(instance_url).port
             if port not in (None, 443):
-                instance_kwargs["sf_instance"] += ':' + str(port)
+                instance_kwargs["sf_instance"] += ":" + str(port)
             instance_kwargs["sf_instance"] = urlparse(instance_url).hostname
         else:
             instance_kwargs["sf_instance"] = instance
 
-    elif all(arg is not None for arg in (
-            username, password, organizationId)):
-        instance_kwargs["auth_type"] = 'ipfilter'
+    elif all(arg is not None for arg in (username, password, organizationId)):
+        instance_kwargs["auth_type"] = "ipfilter"
 
         # Pass along the username/password to our login helper
         session_id, sf_instance = await AsyncSalesforceLogin(
@@ -150,12 +148,15 @@ async def build_async_salesforce_client(
             sf_version=version,
             proxies=proxies,
             client_id=client_id,
-            domain=domain)
+            domain=domain,
+        )
         instance_kwargs["session_id"] = session_id
         instance_kwargs["sf_instance"] = sf_instance
 
-    elif all(arg is not None for arg in (
-            username, consumer_key, privatekey_file or privatekey)):
+    elif all(
+        arg is not None
+        for arg in (username, consumer_key, privatekey_file or privatekey)
+    ):
         instance_kwargs["auth_type"] = "jwt-bearer"
 
         # Pass along the username/password to our login helper
@@ -166,14 +167,13 @@ async def build_async_salesforce_client(
             privatekey_file=privatekey_file,
             privatekey=privatekey,
             proxies=proxies,
-            domain=domain)
+            domain=domain,
+        )
         instance_kwargs["session_id"] = session_id
         instance_kwargs["sf_instance"] = sf_instance
 
     else:
-        raise TypeError(
-            'You must provide login information or an instance and token'
-        )
+        raise TypeError("You must provide login information or an instance and token")
     return AsyncSalesforce(**instance_kwargs)
 
 
@@ -181,6 +181,7 @@ class SessionMixin:
     """
     This mixin offers a convenient way to use a shared session object.
     """
+
     async def close_session(self):
         """
         Offer users a method to _close_ a session.
@@ -203,8 +204,9 @@ class SessionMixin:
         """
         if self._proxies and self._session:
             logger.warning(
-                'Proxies must be defined on custom session object, '
-                'ignoring proxies: %s', self._proxies
+                "Proxies must be defined on custom session object, "
+                "ignoring proxies: %s",
+                self._proxies,
             )
         if self._session:
             return self._session
@@ -264,31 +266,32 @@ class AsyncSalesforce(SessionMixin):
             self._session = httpx.AsyncClient(proxies=proxies)
         elif proxies and self._session:
             logger.warning(
-                'Proxies must be defined on custom session object, '
-                'ignoring proxies: %s', proxies
+                "Proxies must be defined on custom session object, "
+                "ignoring proxies: %s",
+                proxies,
             )
 
-        self.auth_site = ('https://{domain}.salesforce.com'
-                          .format(domain=self.domain))
+        self.auth_site = "https://{domain}.salesforce.com".format(domain=self.domain)
 
         self.headers = {
-            'Content-Type': 'application/json',
-            'Authorization': 'Bearer {}'.format(self.session_id or ""),
-            'X-PrettyPrint': '1'
+            "Content-Type": "application/json",
+            "Authorization": "Bearer {}".format(self.session_id or ""),
+            "X-PrettyPrint": "1",
         }
 
-        self.base_url = ('https://{instance}/services/data/v{version}/'
-                         .format(instance=self.sf_instance,
-                                 version=self.sf_version))
-        self.apex_url = ('https://{instance}/services/apexrest/'
-                         .format(instance=self.sf_instance))
-        self.bulk_url = ('https://{instance}/services/async/{version}/'
-                         .format(instance=self.sf_instance,
-                                 version=self.sf_version))
-        self.metadata_url = ('https://{instance}/services/Soap/m/{version}/'
-                             .format(instance=self.sf_instance,
-                                     version=self.sf_version))
-        self.tooling_url = '{base_url}tooling/'.format(base_url=self.base_url)
+        self.base_url = "https://{instance}/services/data/v{version}/".format(
+            instance=self.sf_instance, version=self.sf_version
+        )
+        self.apex_url = "https://{instance}/services/apexrest/".format(
+            instance=self.sf_instance
+        )
+        self.bulk_url = "https://{instance}/services/async/{version}/".format(
+            instance=self.sf_instance, version=self.sf_version
+        )
+        self.metadata_url = "https://{instance}/services/Soap/m/{version}/".format(
+            instance=self.sf_instance, version=self.sf_version
+        )
+        self.tooling_url = "{base_url}tooling/".format(base_url=self.base_url)
 
         self.api_usage = {}
 
@@ -300,9 +303,7 @@ class AsyncSalesforce(SessionMixin):
         * keyword arguments supported by requests.request (e.g. json, timeout)
         """
         url = self.base_url + "sobjects"
-        result = await self._call_salesforce(
-            'GET', url, name='describe', **kwargs
-        )
+        result = await self._call_salesforce("GET", url, name="describe", **kwargs)
 
         json_result = result.json(object_pairs_hook=OrderedDict)
         if len(json_result) == 0:
@@ -314,11 +315,10 @@ class AsyncSalesforce(SessionMixin):
         """After connection returns is the organization in a sandbox"""
         is_sandbox = None
         if self.session_id:
-            is_sandbox = self.query_all("SELECT IsSandbox "
-                                        "FROM Organization LIMIT 1")
-            is_sandbox = is_sandbox.get('records', [{'IsSandbox': None}])[
-                0].get(
-                'IsSandbox')
+            is_sandbox = self.query_all("SELECT IsSandbox " "FROM Organization LIMIT 1")
+            is_sandbox = is_sandbox.get("records", [{"IsSandbox": None}])[0].get(
+                "IsSandbox"
+            )
         return is_sandbox
 
     # SObject Handler
@@ -338,18 +338,23 @@ class AsyncSalesforce(SessionMixin):
 
         # fix to enable serialization
         # (https://github.com/heroku/simple-salesforce/issues/60)
-        if name.startswith('__'):
+        if name.startswith("__"):
             return super().__getattr__(name)
 
-        if name == 'bulk':
+        if name == "bulk":
             # Deal with bulk API functions
             return AsyncSFBulkHandler(
                 self.session_id, self.bulk_url, self._proxies, self._session
             )
 
         return AsyncSFType(
-            name, self.session_id, self.sf_instance, sf_version=self.sf_version,
-            proxies=self._proxies, session=self._session)
+            name,
+            self.session_id,
+            self.sf_instance,
+            sf_version=self.sf_version,
+            proxies=self._proxies,
+            session=self._session,
+        )
 
     # User utility methods
     async def set_password(self, user, password):
@@ -365,26 +370,23 @@ class AsyncSalesforce(SessionMixin):
         * password: the new password
         """
 
-        url = self.base_url + 'sobjects/User/%s/password' % user
-        params = {'NewPassword': password}
+        url = self.base_url + "sobjects/User/%s/password" % user
+        params = {"NewPassword": password}
 
-        result = await self._call_salesforce(
-            'POST', url, data=json.dumps(params)
-        )
+        result = await self._call_salesforce("POST", url, data=json.dumps(params))
 
         if result.status_code == 204:
             return None
 
         # salesforce return 204 No Content when the request is successful
         if result.status_code != 200:
-            raise SalesforceGeneralError(url,
-                                         result.status_code,
-                                         'User',
-                                         result.content)
+            raise SalesforceGeneralError(
+                url, result.status_code, "User", result.content
+            )
         return result.json(object_pairs_hook=OrderedDict)
 
     # Generic Rest Function
-    async def restful(self, path, params=None, method='GET', **kwargs):
+    async def restful(self, path, params=None, method="GET", **kwargs):
         """Allows you to make a direct REST call if you know the path
 
         Arguments:
@@ -417,13 +419,11 @@ class AsyncSalesforce(SessionMixin):
         * search -- the fully formatted SOSL search string, e.g.
                     `FIND {Waldo}`
         """
-        url = self.base_url + 'search/'
+        url = self.base_url + "search/"
 
         # `requests` will correctly encode the query string passed as `params`
-        params = {'q': search}
-        result = await self._call_salesforce(
-            'GET', url, name='search', params=params
-        )
+        params = {"q": search}
+        result = await self._call_salesforce("GET", url, name="search", params=params)
 
         json_result = result.json(object_pairs_hook=OrderedDict)
         if len(json_result) == 0:
@@ -441,15 +441,15 @@ class AsyncSalesforce(SessionMixin):
                     string will be wrapped to read `FIND {Waldo}` before being
                     sent to Salesforce
         """
-        search_string = 'FIND {{{search_string}}}'.format(search_string=search)
+        search_string = "FIND {{{search_string}}}".format(search_string=search)
         return await self.search(search_string)
 
     async def limits(self, **kwargs):
         """Return the result of a Salesforce request to list Organization
         limits.
         """
-        url = self.base_url + 'limits/'
-        result = await self._call_salesforce('GET', url, **kwargs)
+        url = self.base_url + "limits/"
+        result = await self._call_salesforce("GET", url, **kwargs)
 
         if result.status_code != 200:
             exception_handler(result)
@@ -467,18 +467,22 @@ class AsyncSalesforce(SessionMixin):
                    SELECT Id FROM Lead WHERE Email = "waldo@somewhere.com"
         * include_deleted -- True if deleted records should be included
         """
-        url = self.base_url + ('queryAll/' if include_deleted else 'query/')
-        params = {'q': query}
+        url = self.base_url + ("queryAll/" if include_deleted else "query/")
+        params = {"q": query}
         # `requests` will correctly encode the query string passed as `params`
         result = await self._call_salesforce(
-            'GET', url, name='query', params=params, **kwargs
+            "GET", url, name="query", params=params, **kwargs
         )
 
         return result.json(object_pairs_hook=OrderedDict)
 
     async def query_more(
-            self, next_records_identifier, identifier_is_url=False,
-            include_deleted=False, **kwargs):
+        self,
+        next_records_identifier,
+        identifier_is_url=False,
+        include_deleted=False,
+        **kwargs
+    ):
         """Retrieves more results from a query that returned more results
         than the batch maximum. Returns a dict decoded from the Salesforce
         response JSON payload.
@@ -498,17 +502,16 @@ class AsyncSalesforce(SessionMixin):
         """
         if identifier_is_url:
             # Don't use `self.base_url` here because the full URI is provided
-            url = ('https://{instance}{next_record_url}'
-                   .format(instance=self.sf_instance,
-                           next_record_url=next_records_identifier))
+            url = "https://{instance}{next_record_url}".format(
+                instance=self.sf_instance, next_record_url=next_records_identifier
+            )
         else:
-            endpoint = 'queryAll' if include_deleted else 'query'
-            url = self.base_url + '{query_endpoint}/{next_record_id}'
-            url = url.format(query_endpoint=endpoint,
-                             next_record_id=next_records_identifier)
-        result = await self._call_salesforce(
-            'GET', url, name='query_more', **kwargs
-        )
+            endpoint = "queryAll" if include_deleted else "query"
+            url = self.base_url + "{query_endpoint}/{next_record_id}"
+            url = url.format(
+                query_endpoint=endpoint, next_record_id=next_records_identifier
+            )
+        result = await self._call_salesforce("GET", url, name="query_more", **kwargs)
 
         return result.json(object_pairs_hook=OrderedDict)
 
@@ -532,16 +535,14 @@ class AsyncSalesforce(SessionMixin):
         * include_deleted -- True if the query should include deleted records.
         """
 
-        result = await self.query(
-            query, include_deleted=include_deleted, **kwargs
-        )
+        result = await self.query(query, include_deleted=include_deleted, **kwargs)
         while True:
-            for record in result['records']:
+            for record in result["records"]:
                 yield record
             # fetch next batch if we're not done else break out of loop
-            if not result['done']:
+            if not result["done"]:
                 result = await self.query_more(
-                    result['nextRecordsUrl'], identifier_is_url=True
+                    result["nextRecordsUrl"], identifier_is_url=True
                 )
             else:
                 return
@@ -564,18 +565,16 @@ class AsyncSalesforce(SessionMixin):
         * include_deleted -- True if the query should include deleted records.
         """
         all_records = []
-        response = self.query_all_iter(
-            query, include_deleted=include_deleted, **kwargs
-        )
+        response = self.query_all_iter(query, include_deleted=include_deleted, **kwargs)
         async for record in response:
             all_records.append(record)
         return {
-            'records': all_records,
-            'totalSize': len(all_records),
-            'done': True,
+            "records": all_records,
+            "totalSize": len(all_records),
+            "done": True,
         }
 
-    async def toolingexecute(self, action, method='GET', data=None, **kwargs):
+    async def toolingexecute(self, action, method="GET", data=None, **kwargs):
         """Makes an HTTP request to an TOOLING REST endpoint
 
         Arguments:
@@ -592,7 +591,8 @@ class AsyncSalesforce(SessionMixin):
             method,
             self.tooling_url + action,
             name="toolingexecute",
-            data=json_data, **kwargs
+            data=json_data,
+            **kwargs
         )
         try:
             response_content = result.json()
@@ -602,7 +602,7 @@ class AsyncSalesforce(SessionMixin):
 
         return response_content
 
-    async def apexecute(self, action, method='GET', data=None, **kwargs):
+    async def apexecute(self, action, method="GET", data=None, **kwargs):
         """Makes an HTTP request to an APEX REST endpoint
 
         Arguments:
@@ -616,10 +616,7 @@ class AsyncSalesforce(SessionMixin):
         # None in json.
         json_data = json.dumps(data) if data is not None else None
         result = await self._call_salesforce(
-            method,
-            self.apex_url + action,
-            name="apexecute",
-            data=json_data, **kwargs
+            method, self.apex_url + action, name="apexecute", data=json_data, **kwargs
         )
         try:
             response_content = result.json()
@@ -635,15 +632,13 @@ class AsyncSalesforce(SessionMixin):
         Returns a `requests.result` object.
         """
         headers = self.headers.copy()
-        additional_headers = kwargs.pop('headers', dict())
+        additional_headers = kwargs.pop("headers", dict())
         headers.update(additional_headers)
-        result = await self.session.request(
-            method, url, headers=headers, **kwargs
-        )
+        result = await self.session.request(method, url, headers=headers, **kwargs)
 
         if result.status_code >= 300:
             exception_handler(result, name=name)
-        sforce_limit_info = result.headers.get('Sforce-Limit-Info')
+        sforce_limit_info = result.headers.get("Sforce-Limit-Info")
         if sforce_limit_info:
             self.api_usage = self.parse_api_usage(sforce_limit_info)
 
@@ -662,20 +657,20 @@ class AsyncSalesforce(SessionMixin):
         """
         result = {}
 
-        api_usage = re.match(r'[^-]?api-usage=(?P<used>\d+)/(?P<tot>\d+)',
-                             sforce_limit_info)
-        pau = r'.+per-app-api-usage=(?P<u>\d+)/(?P<t>\d+)\(appName=(?P<n>.+)\)'
+        api_usage = re.match(
+            r"[^-]?api-usage=(?P<used>\d+)/(?P<tot>\d+)", sforce_limit_info
+        )
+        pau = r".+per-app-api-usage=(?P<u>\d+)/(?P<t>\d+)\(appName=(?P<n>.+)\)"
         per_app_api_usage = re.match(pau, sforce_limit_info)
 
         if api_usage and api_usage.groups():
             groups = api_usage.groups()
-            result['api-usage'] = Usage(used=int(groups[0]),
-                                        total=int(groups[1]))
+            result["api-usage"] = Usage(used=int(groups[0]), total=int(groups[1]))
         if per_app_api_usage and per_app_api_usage.groups():
             groups = per_app_api_usage.groups()
-            result['per-app-api-usage'] = PerAppUsage(used=int(groups[0]),
-                                                      total=int(groups[1]),
-                                                      name=groups[2])
+            result["per-app-api-usage"] = PerAppUsage(
+                used=int(groups[0]), total=int(groups[1]), name=groups[2]
+            )
 
         return result
 
@@ -702,10 +697,10 @@ class AsyncSalesforce(SessionMixin):
             sandbox=sandbox,
             metadata_url=self.metadata_url,
             api_version=self.sf_version,
-            headers=self.headers
+            headers=self.headers,
         )
         asyncId, state = await mdapi.deploy(zipfile, **kwargs)
-        result = {'asyncId': asyncId, 'state': state}
+        result = {"asyncId": asyncId, "state": state}
         return result
 
     # check on a file-based deployment
@@ -727,15 +722,19 @@ class AsyncSalesforce(SessionMixin):
             sandbox=sandbox,
             metadata_url=self.metadata_url,
             api_version=self.sf_version,
-            headers=self.headers
+            headers=self.headers,
         )
-        state, state_detail, deployment_detail, unit_test_detail = \
-            await mdapi.check_deploy_status(asyncId, **kwargs)
+        (
+            state,
+            state_detail,
+            deployment_detail,
+            unit_test_detail,
+        ) = await mdapi.check_deploy_status(asyncId, **kwargs)
         results = {
-            'state': state,
-            'state_detail': state_detail,
-            'deployment_detail': deployment_detail,
-            'unit_test_detail': unit_test_detail
+            "state": state,
+            "state_detail": state_detail,
+            "deployment_detail": deployment_detail,
+            "unit_test_detail": unit_test_detail,
         }
         return results
 
@@ -745,13 +744,13 @@ class AsyncSFType(SessionMixin):
 
     # pylint: disable=too-many-arguments
     def __init__(
-            self,
-            object_name,
-            session_id,
-            sf_instance,
-            sf_version=DEFAULT_API_VERSION,
-            proxies=None,
-            session=None,
+        self,
+        object_name,
+        session_id,
+        sf_instance,
+        sf_version=DEFAULT_API_VERSION,
+        proxies=None,
+        session=None,
     ):
         """Initialize the instance with the given parameters.
 
@@ -776,16 +775,18 @@ class AsyncSFType(SessionMixin):
             self._session = httpx.AsyncClient(proxies=proxies)
         elif proxies and self._session:
             logger.warning(
-                'Proxies must be defined on custom session object, '
-                'ignoring proxies: %s', proxies
+                "Proxies must be defined on custom session object, "
+                "ignoring proxies: %s",
+                proxies,
             )
         self.api_usage = {}
 
         self.base_url = (
-            'https://{instance}/services/data/v{sf_version}/sobjects'
-            '/{object_name}/'.format(instance=sf_instance,
-                                     object_name=object_name,
-                                     sf_version=sf_version))
+            "https://{instance}/services/data/v{sf_version}/sobjects"
+            "/{object_name}/".format(
+                instance=sf_instance, object_name=object_name, sf_version=sf_version
+            )
+        )
 
     async def metadata(self, headers=None):
         """Returns the result of a GET to `.../{object_name}/` as a dict
@@ -795,9 +796,7 @@ class AsyncSFType(SessionMixin):
 
         * headers -- a dict with additional request headers.
         """
-        result = await self._call_salesforce(
-            'GET', self.base_url, headers=headers
-        )
+        result = await self._call_salesforce("GET", self.base_url, headers=headers)
         return result.json(object_pairs_hook=OrderedDict)
 
     async def describe(self, headers=None):
@@ -809,8 +808,7 @@ class AsyncSFType(SessionMixin):
         * headers -- a dict with additional request headers.
         """
         result = await self._call_salesforce(
-            method='GET', url=urljoin(self.base_url, 'describe'),
-            headers=headers
+            method="GET", url=urljoin(self.base_url, "describe"), headers=headers
         )
         return result.json(object_pairs_hook=OrderedDict)
 
@@ -826,13 +824,9 @@ class AsyncSFType(SessionMixin):
         * record_id -- the Id of the SObject to get
         * headers -- a dict with additional request headers.
         """
-        custom_url_part = 'describe/layouts/{record_id}'.format(
-            record_id=record_id
-        )
+        custom_url_part = "describe/layouts/{record_id}".format(record_id=record_id)
         result = await self._call_salesforce(
-            method='GET',
-            url=urljoin(self.base_url, custom_url_part),
-            headers=headers
+            method="GET", url=urljoin(self.base_url, custom_url_part), headers=headers
         )
         return result.json(object_pairs_hook=OrderedDict)
 
@@ -846,8 +840,7 @@ class AsyncSFType(SessionMixin):
         * headers -- a dict with additional request headers.
         """
         result = await self._call_salesforce(
-            method='GET', url=urljoin(self.base_url, record_id),
-            headers=headers
+            method="GET", url=urljoin(self.base_url, record_id), headers=headers
         )
         return result.json(object_pairs_hook=OrderedDict)
 
@@ -866,12 +859,13 @@ class AsyncSFType(SessionMixin):
         * headers -- a dict with additional request headers.
         """
         custom_url = urljoin(
-            self.base_url, '{custom_id_field}/{custom_id}'.format(
+            self.base_url,
+            "{custom_id_field}/{custom_id}".format(
                 custom_id_field=custom_id_field, custom_id=custom_id
-            )
+            ),
         )
         result = await self._call_salesforce(
-            method='GET', url=custom_url, headers=headers
+            method="GET", url=custom_url, headers=headers
         )
         return result.json(object_pairs_hook=OrderedDict)
 
@@ -887,8 +881,7 @@ class AsyncSFType(SessionMixin):
         * headers -- a dict with additional request headers.
         """
         result = await self._call_salesforce(
-            method='POST', url=self.base_url,
-            data=json.dumps(data), headers=headers
+            method="POST", url=self.base_url, data=json.dumps(data), headers=headers
         )
         return result.json(object_pairs_hook=OrderedDict)
 
@@ -911,8 +904,10 @@ class AsyncSFType(SessionMixin):
         * headers -- a dict with additional request headers.
         """
         result = await self._call_salesforce(
-            method='PATCH', url=urljoin(self.base_url, record_id),
-            data=json.dumps(data), headers=headers
+            method="PATCH",
+            url=urljoin(self.base_url, record_id),
+            data=json.dumps(data),
+            headers=headers,
         )
         return self._raw_response(result, raw_response)
 
@@ -934,8 +929,10 @@ class AsyncSFType(SessionMixin):
         * headers -- a dict with additional request headers.
         """
         result = await self._call_salesforce(
-            method='PATCH', url=urljoin(self.base_url, record_id),
-            data=json.dumps(data), headers=headers
+            method="PATCH",
+            url=urljoin(self.base_url, record_id),
+            data=json.dumps(data),
+            headers=headers,
         )
         return self._raw_response(result, raw_response)
 
@@ -955,8 +952,7 @@ class AsyncSFType(SessionMixin):
         * headers -- a dict with additional request headers.
         """
         result = await self._call_salesforce(
-            method='DELETE', url=urljoin(self.base_url, record_id),
-            headers=headers
+            method="DELETE", url=urljoin(self.base_url, record_id), headers=headers
         )
         return self._raw_response(result, raw_response)
 
@@ -974,11 +970,12 @@ class AsyncSFType(SessionMixin):
         * headers -- a dict with additional request headers.
         """
         url = urljoin(
-            self.base_url, 'deleted/?start={start}&end={end}'.format(
+            self.base_url,
+            "deleted/?start={start}&end={end}".format(
                 start=date_to_iso8601(start), end=date_to_iso8601(end)
-            )
+            ),
         )
-        result = await self._call_salesforce(method='GET', url=url, headers=headers)
+        result = await self._call_salesforce(method="GET", url=url, headers=headers)
         return result.json(object_pairs_hook=OrderedDict)
 
     async def updated(self, start, end, headers=None):
@@ -996,11 +993,12 @@ class AsyncSFType(SessionMixin):
         * headers -- a dict with additional request headers.
         """
         url = urljoin(
-            self.base_url, 'updated/?start={start}&end={end}'.format(
+            self.base_url,
+            "updated/?start={start}&end={end}".format(
                 start=date_to_iso8601(start), end=date_to_iso8601(end)
-            )
+            ),
         )
-        result = await self._call_salesforce(method='GET', url=url, headers=headers)
+        result = await self._call_salesforce(method="GET", url=url, headers=headers)
         return result.json(object_pairs_hook=OrderedDict)
 
     async def _call_salesforce(self, method, url, **kwargs):
@@ -1009,19 +1007,17 @@ class AsyncSFType(SessionMixin):
         Returns a `requests.result` object.
         """
         headers = {
-            'Content-Type': 'application/json',
-            'Authorization': 'Bearer ' + self.session_id,
-            'X-PrettyPrint': '1'
+            "Content-Type": "application/json",
+            "Authorization": "Bearer " + self.session_id,
+            "X-PrettyPrint": "1",
         }
-        additional_headers = kwargs.pop('headers', dict())
+        additional_headers = kwargs.pop("headers", dict())
         headers.update(additional_headers or dict())
-        result = await self.session.request(
-            method, url, headers=headers, **kwargs
-        )
+        result = await self.session.request(method, url, headers=headers, **kwargs)
 
         if result.status_code >= 300:
             exception_handler(result, self.name)
-        sforce_limit_info = result.headers.get('Sforce-Limit-Info')
+        sforce_limit_info = result.headers.get("Sforce-Limit-Info")
         if sforce_limit_info:
             self.api_usage = AsyncSalesforce.parse_api_usage(sforce_limit_info)
 
