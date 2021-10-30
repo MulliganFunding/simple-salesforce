@@ -753,7 +753,11 @@ DEPLOY_SUCCESS = (
     "<numberComponentsDeployed>4</numberComponentsDeployed>"
     "<numberComponentsTotal>4</numberComponentsTotal>"
     "<numberTestErrors>0</numberTestErrors><numberTestsCompleted>"
-    "0</numberTestsCompleted><numberTestsTotal>0</numberTestsTotal><rollbackOnError>true</rollbackOnError><runTestsEnabled>false</runTestsEnabled><startDate>2020-10-28T13:33:26.000Z</startDate><status>Succeeded</status><success>true</success></result></checkDeployStatusResponse></soapenv:Body></soapenv:Envelope>"
+    "0</numberTestsCompleted><numberTestsTotal>0</numberTestsTotal>"
+    "<rollbackOnError>true</rollbackOnError><runTestsEnabled>false"
+    "</runTestsEnabled><startDate>2020-10-28T13:33:26.000Z</startDate>"
+    "<status>Succeeded</status><success>true</success></result>"
+    "</checkDeployStatusResponse></soapenv:Body></soapenv:Envelope>"
 )
 DEPLOY_PAYLOAD_ERROR = (
     '<?xml version="1.0" '
