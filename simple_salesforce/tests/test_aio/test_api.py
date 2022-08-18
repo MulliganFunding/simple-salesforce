@@ -20,7 +20,7 @@ from simple_salesforce.exceptions import SalesforceGeneralError
 from simple_salesforce.util import date_to_iso8601
 
 
-DEFAULT_URL = "https://my.salesforce.com/services/data/v42.0/sobjects/{}"
+DEFAULT_URL = "https://my.salesforce.com/services/data/v52.0/sobjects/{}"
 CASE_URL = DEFAULT_URL.format("Case")
 
 # # # # # # # # # # # # # # # # # # # # # #
