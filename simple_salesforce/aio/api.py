@@ -39,6 +39,7 @@ async def build_async_salesforce_client(
     client_id: Optional[str] = None,
     domain: Optional[str] = None,
     consumer_key: Optional[str] = None,
+    consumer_secret=None,
     privatekey_file=None,
     privatekey=None,
     parse_float=None,
@@ -66,6 +67,10 @@ async def build_async_salesforce_client(
                 common domains, such as 'login' or 'test', or
                 Salesforce My domain. If not used, will default to
                 'login'.
+
+    OAuth 2.0 Connected App Token Authentication:
+    * consumer_key -- the consumer key generated for the user
+    * consumer_secret -- the consumer secret generated for the user
 
     OAuth 2.0 JWT Bearer Token Authentication:
     * consumer_key -- the consumer key generated for the user
@@ -141,7 +146,7 @@ async def build_async_salesforce_client(
             instance_kwargs["sf_instance"] = urlparse(instance_url).hostname
             port = urlparse(instance_url).port
             if port not in (None, 443):
-                instance_kwargs["sf_instance"] += ":" + str(port)
+                instance_kwargs["sf_instance"] += f":{port}"
             instance_kwargs["sf_instance"] = urlparse(instance_url).hostname
         else:
             instance_kwargs["sf_instance"] = instance
@@ -159,6 +164,20 @@ async def build_async_salesforce_client(
             client_id=client_id,
             domain=domain,
         )
+    elif all(arg is not None for arg in (
+            username, password, consumer_key, consumer_secret)):
+        instance_kwargs["auth_type"] = "password"
+
+        # Pass along the username/password to our login helper
+        login_refresh = partial(
+            AsyncSalesforceLogin,
+            session_factory=session_factory,
+            username=username,
+            password=password,
+            consumer_key=consumer_key,
+            consumer_secret=consumer_secret,
+            proxies=proxies,
+            domain=domain)
     elif all(
         arg is not None
         for arg in (username, consumer_key, privatekey_file or privatekey)
@@ -275,24 +294,15 @@ class AsyncSalesforce:
         if not self.session_factory:
             self.session_factory = create_session_factory(self._proxies, timeout=self.request_timeout_seconds)
 
-        self.auth_site = "https://{domain}.salesforce.com".format(domain=self.domain)
+        self.auth_site = f"https://{domain}.salesforce.com"
         self.headers = self._generate_headers()
 
-        self.base_url = "https://{instance}/services/data/v{version}/".format(
-            instance=self.sf_instance, version=self.sf_version
-        )
-        self.apex_url = "https://{instance}/services/apexrest/".format(
-            instance=self.sf_instance
-        )
-        self.bulk_url = "https://{instance}/services/async/{version}/".format(
-            instance=self.sf_instance, version=self.sf_version
-        )
-        self.metadata_url = "https://{instance}/services/Soap/m/{version}/".format(
-            instance=self.sf_instance, version=self.sf_version
-        )
-        self.oauth2_url = ('https://{instance}/services/oauth2/'
-                           .format(instance=self.sf_instance))
-        self.tooling_url = "{base_url}tooling/".format(base_url=self.base_url)
+        self.base_url = f"https://{self.instance}/services/data/v{self.sf_version}/"
+        self.apex_url = f"https://{self.instance}/services/apexrest/"
+        self.bulk_url = f"https://{self.instance}/services/async/{self.sf_version}/"
+        self.metadata_url = f"https://{self.instance}/services/Soap/m/{self.sf_version}/"
+        self.oauth2_url = f"https://{self.sf_instance}/services/oauth2/"
+        self.tooling_url = f"{self.base_url}tooling/"
 
         self.api_usage = {}
         self._parse_float = parse_float

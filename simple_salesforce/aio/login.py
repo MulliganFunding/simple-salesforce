@@ -4,7 +4,7 @@ Heavily Modified from RestForce 1.0.0
 """
 import aiofiles
 from datetime import datetime, timedelta, timezone
-from html import escape
+from html import escape, unescape
 from json.decoder import JSONDecodeError
 import typing
 import warnings
@@ -31,6 +31,7 @@ async def AsyncSalesforceLogin(
     client_id=None,
     domain=None,
     consumer_key=None,
+    consumer_secret=None,
     privatekey_file=None,
     privatekey=None,
 ) -> typing.Tuple[str, str]:
@@ -47,40 +48,40 @@ async def AsyncSalesforceLogin(
             NOTE: security_token an organizationId are mutually exclusive
     * sf_version -- the version of the Salesforce API to use, for example
                     "27.0"
-    * proxies -- the optional map of scheme to proxy server (note: httpx style!)
-    * session -- DEPRECATED. Custom httpx session (AsyncClient), created in calling code.
-                 This enables the use of httpx AsyncClient features not otherwise
-                 exposed by simple_salesforce. Pass `session_factory` instead.
-    * session_factory -- Function to return a custom httpx session (AsyncClient).
-                         This enables the use of httpx Session features not otherwise
-                         exposed by simple_salesforce.
+    * proxies -- the optional map of scheme to proxy server
+    * session -- Custom requests session, created in calling code. This
+                 enables the use of requets Session features not otherwise
+                 exposed by simple_salesforce.
     * client_id -- the ID of this client
     * domain -- The domain to using for connecting to Salesforce. Use
                 common domains, such as 'login' or 'test', or
                 Salesforce My domain. If not used, will default to
                 'login'.
-    * consumer_key -- the consumer key generated for the user
+    * consumer_key -- the consumer key generated for the user/app
+    * consumer_secret -- the consumer secret generated for the user/app
     * privatekey_file -- the path to the private key file used
                          for signing the JWT token.
     * privatekey -- the private key to use
                          for signing the JWT token.
     """
+
     if session is not None:
         warnings.warn("The session keyword argument for async clients is deprecated")
 
     if domain is None:
         domain = "login"
 
-    soap_url = "https://{domain}.salesforce.com/services/Soap/u/{sf_version}"
+    if sf_version.startswith("v"):
+        error_msg = (
+            f"Invalid sf_version specified ({sf_version}). Version should not "
+            "contain a leading 'v'"
+        )
+        raise ValueError(error_msg)
 
     if client_id:
-        client_id = "{prefix}/{app_name}".format(
-            prefix=DEFAULT_CLIENT_ID_PREFIX, app_name=client_id
-        )
+        client_id = f"{DEFAULT_CLIENT_ID_PREFIX}/{client_id}"
     else:
         client_id = DEFAULT_CLIENT_ID_PREFIX
-
-    soap_url = soap_url.format(domain=domain, sf_version=sf_version)
 
     # pylint: disable=E0012,deprecated-method
     username = escape(username) if username else None
@@ -89,80 +90,91 @@ async def AsyncSalesforceLogin(
     # Check if token authentication is used
     if security_token is not None:
         # Security Token Soap request body
-        login_soap_request_body = """<?xml version="1.0" encoding="utf-8" ?>
-        <env:Envelope
-                xmlns:xsd="http://www.w3.org/2001/XMLSchema"
-                xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-                xmlns:env="http://schemas.xmlsoap.org/soap/envelope/"
-                xmlns:urn="urn:partner.soap.sforce.com">
-            <env:Header>
-                <urn:CallOptions>
-                    <urn:client>{client_id}</urn:client>
-                    <urn:defaultNamespace>sf</urn:defaultNamespace>
-                </urn:CallOptions>
-            </env:Header>
-            <env:Body>
-                <n1:login xmlns:n1="urn:partner.soap.sforce.com">
-                    <n1:username>{username}</n1:username>
-                    <n1:password>{password}{token}</n1:password>
-                </n1:login>
-            </env:Body>
-        </env:Envelope>""".format(
-            username=username,
-            password=password,
-            token=security_token,
-            client_id=client_id,
+        login_soap_request_body = f"""<?xml version="1.0" encoding="utf-8" ?>
+<env:Envelope
+        xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xmlns:env="http://schemas.xmlsoap.org/soap/envelope/"
+        xmlns:urn="urn:partner.soap.sforce.com">
+    <env:Header>
+        <urn:CallOptions>
+            <urn:client>{client_id}</urn:client>
+            <urn:defaultNamespace>sf</urn:defaultNamespace>
+        </urn:CallOptions>
+    </env:Header>
+    <env:Body>
+        <n1:login xmlns:n1="urn:partner.soap.sforce.com">
+            <n1:username>{username}</n1:username>
+            <n1:password>{password}{security_token}</n1:password>
+        </n1:login>
+    </env:Body>
+</env:Envelope>"""
+
+    elif (
+        username is not None
+        and password is not None
+        and consumer_key is not None
+        and consumer_secret is not None
+    ):
+        token_data = {
+            "grant_type": "password",
+            "client_id": consumer_key,
+            "client_secret": consumer_secret,
+            "username": unescape(username),
+            "password": unescape(password) if password else None,
+        }
+        return await token_login(
+            f"https://{domain}.salesforce.com/services/oauth2/token",
+            token_data,
+            domain,
+            consumer_key,
+            None,
+            proxies,
+            session_factory=session_factory,
         )
 
     # Check if IP Filtering is used in conjunction with organizationId
     elif organizationId is not None:
         # IP Filtering Login Soap request body
-        login_soap_request_body = """<?xml version="1.0" encoding="utf-8" ?>
-        <soapenv:Envelope
-                xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
-                xmlns:urn="urn:partner.soap.sforce.com">
-            <soapenv:Header>
-                <urn:CallOptions>
-                    <urn:client>{client_id}</urn:client>
-                    <urn:defaultNamespace>sf</urn:defaultNamespace>
-                </urn:CallOptions>
-                <urn:LoginScopeHeader>
-                    <urn:organizationId>{organizationId}</urn:organizationId>
-                </urn:LoginScopeHeader>
-            </soapenv:Header>
-            <soapenv:Body>
-                <urn:login>
-                    <urn:username>{username}</urn:username>
-                    <urn:password>{password}</urn:password>
-                </urn:login>
-            </soapenv:Body>
-        </soapenv:Envelope>""".format(
-            username=username,
-            password=password,
-            organizationId=organizationId,
-            client_id=client_id,
-        )
+        login_soap_request_body = f"""<?xml version="1.0" encoding="utf-8" ?>
+<soapenv:Envelope
+        xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
+        xmlns:urn="urn:partner.soap.sforce.com">
+    <soapenv:Header>
+        <urn:CallOptions>
+            <urn:client>{client_id}</urn:client>
+            <urn:defaultNamespace>sf</urn:defaultNamespace>
+        </urn:CallOptions>
+        <urn:LoginScopeHeader>
+            <urn:organizationId>{organizationId}</urn:organizationId>
+        </urn:LoginScopeHeader>
+    </soapenv:Header>
+    <soapenv:Body>
+        <urn:login>
+            <urn:username>{username}</urn:username>
+            <urn:password>{password}</urn:password>
+        </urn:login>
+    </soapenv:Body>
+</soapenv:Envelope>"""
     elif username is not None and password is not None:
         # IP Filtering for non self-service users
-        login_soap_request_body = """<?xml version="1.0" encoding="utf-8" ?>
-        <soapenv:Envelope
-                xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
-                xmlns:urn="urn:partner.soap.sforce.com">
-            <soapenv:Header>
-                <urn:CallOptions>
-                    <urn:client>{client_id}</urn:client>
-                    <urn:defaultNamespace>sf</urn:defaultNamespace>
-                </urn:CallOptions>
-            </soapenv:Header>
-            <soapenv:Body>
-                <urn:login>
-                    <urn:username>{username}</urn:username>
-                    <urn:password>{password}</urn:password>
-                </urn:login>
-            </soapenv:Body>
-        </soapenv:Envelope>""".format(
-            username=username, password=password, client_id=client_id
-        )
+        login_soap_request_body = f"""<?xml version="1.0" encoding="utf-8" ?>
+<soapenv:Envelope
+        xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
+        xmlns:urn="urn:partner.soap.sforce.com">
+    <soapenv:Header>
+        <urn:CallOptions>
+            <urn:client>{client_id}</urn:client>
+            <urn:defaultNamespace>sf</urn:defaultNamespace>
+        </urn:CallOptions>
+    </soapenv:Header>
+    <soapenv:Body>
+        <urn:login>
+            <urn:username>{username}</urn:username>
+            <urn:password>{password}</urn:password>
+        </urn:login>
+    </soapenv:Body>
+</soapenv:Envelope>"""
     elif (
         username is not None
         and consumer_key is not None
@@ -171,9 +183,9 @@ async def AsyncSalesforceLogin(
         expiration = datetime.now(timezone.utc) + timedelta(minutes=3)
         payload = {
             "iss": consumer_key,
-            "sub": username,
-            "aud": "https://{domain}.salesforce.com".format(domain=domain),
-            "exp": "{exp:.0f}".format(exp=expiration.timestamp()),
+            "sub": unescape(username),
+            "aud": f"https://{domain}.salesforce.com",
+            "exp": f"{expiration.timestamp():.0f}",
         }
         if privatekey_file is not None:
             async with aiofiles.open(privatekey_file, "rb") as key_file:
@@ -181,18 +193,16 @@ async def AsyncSalesforceLogin(
         else:
             key = privatekey
 
-        assertion = jwt.encode(payload, key, algorithm='RS256')
+        assertion = jwt.encode(payload, key, algorithm="RS256")
 
-        login_token_request_data = {
+        token_data = {
             "grant_type": "urn:ietf:params:oauth:grant-type:jwt-bearer",
             "assertion": assertion,
         }
 
         return await token_login(
-            "https://{domain}.salesforce.com/services/oauth2/token".format(
-                domain=domain
-            ),
-            login_token_request_data,
+            f"https://{domain}.salesforce.com/services/oauth2/token",
+            token_data,
             domain,
             consumer_key,
             None,
@@ -207,6 +217,7 @@ async def AsyncSalesforceLogin(
         )
         raise SalesforceAuthenticationFailed(except_code, except_msg)
 
+    soap_url = f"https://{domain}.salesforce.com/services/Soap/u/{sf_version}"
     login_soap_request_headers = {
         "content-type": "text/xml",
         "charset": "UTF-8",
@@ -282,22 +293,17 @@ async def token_login(
         except_msg = json_response.get("error_description")
         if except_msg == "user hasn't approved this consumer":
             auth_url = (
-                "https://{domain}.salesforce.com/services/oauth2/"
+                f"https://{domain}.salesforce.com/services/oauth2/"
                 "authorize?response_type=code&client_id="
-                "{consumer_key}&redirect_uri=<approved URI>".format(
-                    domain=domain, consumer_key=consumer_key
-                )
+                f"{consumer_key}&redirect_uri=<approved URI>"
             )
-            warnings.warn(
-                """
+            warnings.warn(f"""
     If your connected app policy is set to "All users may
     self-authorize", you may need to authorize this
     application first. Browse to
-    %s
+    {auth_url}
     in order to Allow Access. Check first to ensure you have a valid
-    <approved URI>."""
-                % auth_url
-            )
+    <approved URI>.""")
         raise SalesforceAuthenticationFailed(except_code, except_msg)
 
     access_token = json_response.get("access_token")
