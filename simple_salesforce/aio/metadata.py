@@ -1,6 +1,7 @@
 """Async Class to work with Salesforce Metadata API """
 from base64 import b64encode, b64decode
 import os
+from pathlib import Path
 from xml.etree import ElementTree as ET
 
 import aiofiles
@@ -19,6 +20,7 @@ class AsyncMetadataType:
     """
     Salesforce Metadata Type (using Async Zeep client)
     """
+
     def __init__(self, name, service, zeep_type, session_header):
         """
         Initialize metadata type
@@ -51,10 +53,9 @@ class AsyncMetadataType:
         err_string = ""
         for result in response:
             if not result.success:
-                err_string += "\n{}: ".format(result.fullName)
+                err_string += f"\n{result.fullName}: "
                 for error in result.errors:
-                    err_string += "({}, {}), ".format(error.statusCode,
-                                                      error.message)
+                    err_string += f"({error.statusCode}, {error.message}), "
         if err_string:
             raise Exception(err_string)
 
@@ -82,8 +83,7 @@ class AsyncMetadataType:
         :type metadata: list
         """
         response = await self._service.createMetadata(
-            metadata,
-            _soapheaders=[self._session_header]
+            metadata, _soapheaders=[self._session_header]
         )
         self._handle_api_response(response)
 
@@ -103,9 +103,7 @@ class AsyncMetadataType:
         :rtype: list
         """
         response = await self._service.readMetadata(
-            self._name,
-            full_names,
-            _soapheaders=[self._session_header]
+            self._name, full_names, _soapheaders=[self._session_header]
         )
         if len(response) == 1:
             return response[0]
@@ -126,8 +124,7 @@ class AsyncMetadataType:
         :type metadata: list
         """
         response = await self._service.updateMetadata(
-            metadata,
-            _soapheaders=[self._session_header]
+            metadata, _soapheaders=[self._session_header]
         )
         self._handle_api_response(response)
 
@@ -145,9 +142,8 @@ class AsyncMetadataType:
                          mix of both types.
         :type metadata: list
         """
-        response = await self._service.updateMetadata(
-            metadata,
-            _soapheaders=[self._session_header]
+        response = await self._service.upsertMetadata(
+            metadata, _soapheaders=[self._session_header]
         )
         self._handle_api_response(response)
 
@@ -165,9 +161,7 @@ class AsyncMetadataType:
         :type full_names: list
         """
         response = await self._service.deleteMetadata(
-            self._name,
-            full_names,
-            _soapheaders=[self._session_header]
+            self._name, full_names, _soapheaders=[self._session_header]
         )
         self._handle_api_response(response)
 
@@ -184,7 +178,7 @@ class AsyncMetadataType:
             self._name,
             old_full_name,
             new_full_name,
-            _soapheaders=[self._session_header]
+            _soapheaders=[self._session_header],
         )
         self._handle_api_response([result])
 
@@ -195,14 +189,14 @@ class AsyncMetadataType:
         :returns: DescribeValueTypeResult
         """
         return await self._service.describeValueType(
-            "{{http://soap.sforce.com/2006/04/metadata}}{}".format(self._name),
-            _soapheaders=[self._session_header])
-
+            f"{{http://soap.sforce.com/2006/04/metadata}}{self._name}",
+            _soapheaders=[self._session_header],
+        )
 
 
 class AsyncSfdcMetadataApi:
     # pylint: disable=too-many-instance-attributes
-    """ Class to work with Salesforce Metadata API """
+    """Class to work with Salesforce Metadata API"""
     _METADATA_API_BASE_URI = "/services/Soap/m/{version}"
     _XML_NAMESPACES = {
         "soapenv": "http://schemas.xmlsoap.org/soap/envelope/",
@@ -211,9 +205,15 @@ class AsyncSfdcMetadataApi:
 
     # pylint: disable=R0913
     def __init__(
-        self, session_id, instance, metadata_url, headers, api_version, session_factory=None
+        self,
+        session_id,
+        instance,
+        metadata_url,
+        headers,
+        api_version,
+        session_factory=None,
     ):
-        """ Initialize and check session """
+        """Initialize and check session"""
         self._session_id = session_id
         self._instance = instance
         self.metadata_url = metadata_url
@@ -222,14 +222,10 @@ class AsyncSfdcMetadataApi:
         self._deploy_zip = None
         self.session_factory = session_factory
 
-        wsdl_path = os.path.join(
-            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-            'metadata.wsdl'
-        )
+        wsdl_path = Path(__file__).parent / "metadata.wsdl"
         self._client = AsyncClient(
-            os.path.join('simple_salesforce', wsdl_path),
-            settings=Settings(strict=False,
-            xsd_ignore_sequence_order=True)
+            wsdl_path.absolute().as_uri(),
+            settings=Settings(strict=False, xsd_ignore_sequence_order=True),
         )
         self._service = None
         self._session_header = None
@@ -238,10 +234,12 @@ class AsyncSfdcMetadataApi:
         if self._service is None:
             self._service = await self._client.create_service(
                 "{http://soap.sforce.com/2006/04/metadata}MetadataBinding",
-                self.metadata_url)
+                self.metadata_url,
+            )
         if self._session_header is None:
-            self._session_header = await self._client.get_element('ns0:SessionHeader')(
-                sessionId=self._session_id)
+            self._session_header = await self._client.get_element("ns0:SessionHeader")(
+                sessionId=self._session_id
+            )
 
     def __getattr__(self, item):
         if self._service is None:
@@ -249,8 +247,8 @@ class AsyncSfdcMetadataApi:
         return AsyncMetadataType(
             item,
             self._service,
-            self._client.get_type('ns0:' + item),
-            self._session_header
+            self._client.get_type("ns0:" + item),
+            self._session_header,
         )
 
     async def describe_metadata(self):
@@ -260,8 +258,9 @@ class AsyncSfdcMetadataApi:
         :returns: An object of zeep.objects.DescribeMetadataResult
         """
         await self.start_session()
-        return self._service.describeMetadata(self._api_version, _soapheaders=[
-            self._session_header])
+        return self._service.describeMetadata(
+            self._api_version, _soapheaders=[self._session_header]
+        )
 
     async def list_metadata(self, queries):
         """
@@ -275,14 +274,14 @@ class AsyncSfdcMetadataApi:
         :rtype: list
         """
         await self.start_session()
-        return self._service.listMetadata(queries, self._api_version,
-                                          _soapheaders=[self._session_header])
-
+        return self._service.listMetadata(
+            queries, self._api_version, _soapheaders=[self._session_header]
+        )
 
     # pylint: disable=R0914
     # pylint: disable-msg=C0103
     async def deploy(self, zipfile, sandbox, **kwargs):
-        """ Kicks off async deployment, returns deployment id
+        """Kicks off async deployment, returns deployment id
         :param zipfile:
         :type zipfile:
         :param kwargs:
@@ -323,13 +322,13 @@ class AsyncSfdcMetadataApi:
             attributes["rollbackOnError"] = True
 
         if testLevel:
-            test_level = "<met:testLevel>%s</met:testLevel>" % testLevel
+            test_level = f"<met:testLevel>{testLevel}</met:testLevel>"
             attributes["testLevel"] = test_level
 
         tests_tag = ""
         if tests and str(testLevel).lower() == "runspecifiedtests":
             for test in tests:
-                tests_tag += "<met:runTests>%s</met:runTests>\n" % test
+                tests_tag += f"<met:runTests>{test}</met:runTests>\n"
             attributes["tests"] = tests_tag
 
         request = DEPLOY_MSG.format(**attributes)
@@ -372,19 +371,16 @@ class AsyncSfdcMetadataApi:
         :rtype:
         """
         if hasattr(zipfile, "read"):
-            file = zipfile
-            await file.seek(0)
-            should_close = False
+            await zipfile.seek(0)
+            raw = await zipfile.read()
         else:
-            file = await aiofiles.open(zipfile, "rb")
-            should_close = True
-        raw = await file.read()
-        if should_close:
-            await file.close()
+            async with aiofiles.open(zipfile, "rb") as fl:
+                raw = await fl.read()
+
         return b64encode(raw).decode("utf-8")
 
     async def _retrieve_deploy_result(self, async_process_id, **kwargs):
-        """ Retrieves status for specified deployment id
+        """Retrieves status for specified deployment id
         :param async_process_id:
         :type async_process_id:
         :param kwargs:
@@ -417,7 +413,7 @@ class AsyncSfdcMetadataApi:
             "soapenv:Body/mt:checkDeployStatusResponse/mt:result", self._XML_NAMESPACES
         )
         if result is None:
-            raise Exception("Result node could not be found: %s" % res.text)
+            raise Exception(f"Result node could not be found: {res.text}")
 
         return result
 
@@ -519,13 +515,13 @@ class AsyncSfdcMetadataApi:
         return state, state_detail, deployment_detail, unit_test_detail
 
     async def download_unit_test_logs(self, async_process_id):
-        """ Downloads Apex logs for unit tests executed during specified
-        deployment """
+        """Downloads Apex logs for unit tests executed during specified
+        deployment"""
         result = await self._retrieve_deploy_result(async_process_id)
         print("response: %s" % ET.tostring(result, encoding="us-ascii", method="xml"))
 
     async def retrieve(self, async_process_id, **kwargs):
-        """ Submits retrieve request """
+        """Submits retrieve request"""
         # Compose unpackaged XML
         client = kwargs.get("client", "simple_salesforce_metahelper")
         single_package = kwargs.get("single_package", True)
@@ -590,7 +586,7 @@ class AsyncSfdcMetadataApi:
         return async_process_id, state
 
     async def retrieve_retrieve_result(self, async_process_id, include_zip, **kwargs):
-        """ Retrieves status for specified retrieval id """
+        """Retrieves status for specified retrieval id"""
         client = kwargs.get("client", "simple_salesforce_metahelper")
         attributes = {
             "client": client,
@@ -620,7 +616,7 @@ class AsyncSfdcMetadataApi:
         return result
 
     async def retrieve_zip(self, async_process_id, **kwargs):
-        """ Retrieves ZIP file """
+        """Retrieves ZIP file"""
         result = await self.retrieve_retrieve_result(async_process_id, "true", **kwargs)
         state = result.find("mt:status", self._XML_NAMESPACES).text
         error_message = result.find("mt:errorMessage", self._XML_NAMESPACES)
@@ -645,7 +641,7 @@ class AsyncSfdcMetadataApi:
         return state, error_message, messages, zipfile
 
     async def check_retrieve_status(self, async_process_id, **kwargs):
-        """ Checks whether retrieval succeeded """
+        """Checks whether retrieval succeeded"""
         result = await self.retrieve_retrieve_result(
             async_process_id, "false", **kwargs
         )
