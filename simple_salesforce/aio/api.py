@@ -306,11 +306,11 @@ class AsyncSalesforce:
         self.auth_site = f"https://{domain}.salesforce.com"
         self.headers = self._generate_headers()
 
-        self.base_url = f"https://{self.instance}/services/data/v{self.sf_version}/"
-        self.apex_url = f"https://{self.instance}/services/apexrest/"
-        self.bulk_url = f"https://{self.instance}/services/async/{self.sf_version}/"
+        self.base_url = f"https://{self.sf_instance}/services/data/v{self.sf_version}/"
+        self.apex_url = f"https://{self.sf_instance}/services/apexrest/"
+        self.bulk_url = f"https://{self.sf_instance}/services/async/{self.sf_version}/"
         self.metadata_url = (
-            f"https://{self.instance}/services/Soap/m/{self.sf_version}/"
+            f"https://{self.sf_instance}/services/Soap/m/{self.sf_version}/"
         )
         self.oauth2_url = f"https://{self.sf_instance}/services/oauth2/"
         self.tooling_url = f"{self.base_url}tooling/"

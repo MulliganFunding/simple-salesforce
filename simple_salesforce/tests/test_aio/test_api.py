@@ -614,7 +614,7 @@ def test_client_custom_version():
     """
     expected_version = "4.2"
     client = AsyncSalesforce(version=expected_version)
-    assert client.base_url.split("/")[-2] == "v%s" % expected_version
+    assert client.base_url.split("/")[-2] == f"v{expected_version}"
 
 
 @pytest.mark.asyncio
@@ -946,6 +946,39 @@ async def test_md_deploy_success(
     call = mock_client.method_calls[0]
     assert call[1][0] == "POST"
     assert call[1][1] == f"{sf_client.metadata_url}deployRequest"
+
+
+async def test_md_deploy_success_open(
+    mock_httpx_client, sf_client,
+):
+    """Test method for metadata deployment"""
+    mock_response = (
+        '<?xml version="1.0" '
+        'encoding="UTF-8"?><soapenv:Envelope '
+        'xmlns:soapenv="http://schemas.xmlsoap.org/soap'
+        '/envelope/" '
+        'xmlns="http://soap.sforce.com/2006/04/metadata'
+        '"><soapenv:Body><deployResponse><result><done'
+        '>false</done><id>0Af3B00001CMyfASAT</id><state'
+        '>Queued</state></result></deployResponse></soapenv'
+        ':Body></soapenv:Envelope>'
+    )
+
+    _, mock_client, inner = mock_httpx_client
+    happy_result = httpx.Response(200, content=mock_response)
+    inner(happy_result)
+    async with aiofiles.tempfile.NamedTemporaryFile("wb+") as fl:
+        await fl.write(b"Line1\n Line2")
+        await fl.seek(0)
+        result = await sf_client.deploy(fl.name, sandbox=False)
+    assert result.get("asyncId") == "0Af3B00001CMyfASAT"
+    assert result.get("state") == "Queued"
+
+    assert len(mock_client.method_calls) == 1
+    call = mock_client.method_calls[0]
+    assert call[1][0] == "POST"
+    assert call[1][1] == f"{sf_client.metadata_url}deployRequest"
+
 
 
 @pytest.mark.asyncio

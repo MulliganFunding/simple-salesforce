@@ -1,6 +1,5 @@
 """Async Class to work with Salesforce Metadata API """
 from base64 import b64encode, b64decode
-import os
 from pathlib import Path
 from xml.etree import ElementTree as ET
 
@@ -222,9 +221,9 @@ class AsyncSfdcMetadataApi:
         self._deploy_zip = None
         self.session_factory = session_factory
 
-        wsdl_path = Path(__file__).parent / "metadata.wsdl"
+        wsdl_path = Path(__file__).parent.parent / "metadata.wsdl"
         self._client = AsyncClient(
-            wsdl_path.absolute().as_uri(),
+            str(wsdl_path.absolute()),
             settings=Settings(strict=False, xsd_ignore_sequence_order=True),
         )
         self._service = None
