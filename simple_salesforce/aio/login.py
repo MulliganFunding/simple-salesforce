@@ -297,13 +297,15 @@ async def token_login(
                 "authorize?response_type=code&client_id="
                 f"{consumer_key}&redirect_uri=<approved URI>"
             )
-            warnings.warn(f"""
+            warnings.warn(
+                f"""
     If your connected app policy is set to "All users may
     self-authorize", you may need to authorize this
     application first. Browse to
     {auth_url}
     in order to Allow Access. Check first to ensure you have a valid
-    <approved URI>.""")
+    <approved URI>."""
+            )
         raise SalesforceAuthenticationFailed(except_code, except_msg)
 
     access_token = json_response.get("access_token")

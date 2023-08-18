@@ -462,7 +462,9 @@ class AsyncSFBulkType:
         )
         return results
 
-    async def update(self, data, batch_size=10000, use_serial=False, wait=5, bypass_results=False):
+    async def update(
+        self, data, batch_size=10000, use_serial=False, wait=5, bypass_results=False
+    ):
         """update records
 
         Data is batched by 10,000 records by default. To pick a lower size
@@ -479,7 +481,9 @@ class AsyncSFBulkType:
         )
         return results
 
-    async def hard_delete(self, data, batch_size=10000, use_serial=False, wait=5, bypass_results=False):
+    async def hard_delete(
+        self, data, batch_size=10000, use_serial=False, wait=5, bypass_results=False
+    ):
         """hard delete records
 
         Data is batched by 10,000 records by default. To pick a lower size

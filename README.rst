@@ -1,4 +1,58 @@
 *****************
+Async Simple Salesforce
+*****************
+
+This is an **async fork** of the library [`simple-salesforce`](https://github.com/simple-salesforce/simple-salesforce).
+
+This fork is available on PyPI:
+
+.. code-block:: console
+
+    pip install async-simple-salesforce
+
+
+How to Use
+--------------------------
+
+This library attempts to offer the same API as `simple-salesforce` inside an `aio` subpackage.
+
+For instance, here's how to create and use an async Salesforce client:
+
+.. code-block:: python
+
+    import asyncio
+    import datetime
+
+    from simple_salesforce.aio import build_async_salesforce_client
+
+
+    async def create_client(username, consumer_key, private_key):
+        # build_async_salesforce_client accepts all args of simple-salesforce Login
+        return await build_async_salesforce_client(
+                username=username,
+                consumer_key=consumer_key,
+                privatekey_file=private_key,
+                request_timeout_seconds=60 * 2,
+            )
+
+    async def update_contact(sf_client):
+        end = datetime.datetime.now(pytz.UTC) # we need to use UTC as salesforce API requires this
+        await sf_client.Contact.updated(end - datetime.timedelta(days=10), end)
+
+
+    async def run_query(sf_client, opportunity_name: str):
+        query = (
+            f"SELECT Id,StageName from Opportunity where "
+            f"Name='{opportunity_name}'"
+        )
+        return await sf_client.query_all(search)
+
+=============
+
+Simple-Salesforce Documentation Below
+--------------------------
+
+*****************
 Simple Salesforce
 *****************
 
@@ -8,6 +62,10 @@ Simple Salesforce
 .. image:: https://readthedocs.org/projects/simple-salesforce/badge/?version=latest
    :target: http://simple-salesforce.readthedocs.io/en/latest/?badge=latest
    :alt: Documentation Status
+
+Simple Salesforce is a basic Salesforce.com REST API client built for Python 3.6, 3.7 3.8, 3.9, 3.10, and 3.11. The goal is to provide a very low-level interface to the REST Resource and APEX API, returning a dictionary of the API JSON response.
+
+=============
 
 Simple Salesforce is a basic Salesforce.com REST API client built for Python 3.6, 3.7 3.8, 3.9, 3.10, and 3.11. The goal is to provide a very low-level interface to the REST Resource and APEX API, returning a dictionary of the API JSON response.
 
@@ -59,7 +117,7 @@ To login using the JWT method, use your Salesforce username, consumer key from y
 
     from simple_salesforce import Salesforce
     sf = Salesforce(username='myemail@example.com', consumer_key='XYZ', privatekey_file='filename.key')
-    
+
 To login using a connected app, simply include the Salesforce method and pass in your Salesforce username, password, consumer_key and consumer_secret (the consumer key and consumer secret are provided when you setup your connected app):
 
 .. code-block:: python
@@ -442,7 +500,7 @@ Update existing records:
         ]
 
     sf.bulk.Contact.update(data,batch_size=10000,use_serial=True)
-    
+
 Update existing records and update lookup fields from an external id field:
 
 .. code-block:: python
@@ -474,7 +532,7 @@ Query records:
 
     sf.bulk.Account.query(query)
 
-To retrieve large amounts of data, use 
+To retrieve large amounts of data, use
 
 .. code-block:: python
 
@@ -498,7 +556,7 @@ QueryAll will return records that have been deleted because of a merge or delete
 
     sf.bulk.Account.query_all(query)
 
-To retrieve large amounts of data, use 
+To retrieve large amounts of data, use
 
 .. code-block:: python
 
@@ -603,10 +661,10 @@ Convert SFDC Datetime to Datetime or Date object
     import datetime
     # Formatting to SFDC datetime
     formatted_datetime =  datetime.datetime.strptime(x, "%Y-%m-%dT%H:%M:%S.%f%z")
-    
+
     #Formatting to SFDC date
     formatted_date = datetime.strptime(x, "%Y-%m-%d")
-    
+
 Helpful Pandas Resources
 --------------------------
 A list of helpful resources when working with Pandas and simple-salesforce
@@ -614,34 +672,34 @@ A list of helpful resources when working with Pandas and simple-salesforce
 Generate list for SFDC Query "IN" operations from a Pandas Dataframe
 
 .. code-block:: python
- 
+
  import pandas as pd
- 
+
  df = pd.DataFrame([{'Id':1},{'Id':2},{'Id':3}])
     def dataframe_to_sfdc_list(df,column):
       df_list = df[column].unique()
       df_list = [str(x) for x in df_list]
       df_list = ','.join("'"+item+"'" for item in df_list)
       return df_list
-      
+
    sf.query(format_soql("SELECT Id, Email FROM Contact WHERE Id IN ({})", dataframe_to_sfdc_list(df,column)))
-   
+
 Generate Pandas Dataframe from SFDC API Query (ex.query,query_all)
 
 .. code-block:: python
-   
+
    import pandas as pd
-   
+
    sf.query("SELECT Id, Email FROM Contact")
-   
+
    df = pd.DataFrame(data['records']).drop(['attributes'],axis=1)
-   
+
 Generate Pandas Dataframe from SFDC API Query (ex.query,query_all) and append related fields from query to data frame
 
 .. code-block:: python
-   
+
    import pandas as pd
-   
+
    def sf_api_query(data):
     df = pd.DataFrame(data['records']).drop('attributes', axis=1)
     listColumns = list(df.columns)
@@ -652,22 +710,22 @@ Generate Pandas Dataframe from SFDC API Query (ex.query,query_all) and append re
             for i in new_columns:
                 listColumns.append(i)
     return df
-   
+
    df = sf_api_query(sf.query("SELECT Id, Email,ParentAccount.Name FROM Contact"))
-      
+
 Generate Pandas Dataframe from SFDC Bulk API Query (ex.bulk.Account.query)
 
 .. code-block:: python
-   
+
    import pandas as pd
-   
-   sf.bulk.Account.query("SELECT Id, Email FROM Contact")   
+
+   sf.bulk.Account.query("SELECT Id, Email FROM Contact")
    df = pd.DataFrame.from_dict(data,orient='columns').drop('attributes',axis=1)
-      
+
 
 YouTube Tutorial
 --------------------------
-Here is a helpful  `YouTube tutorial`_  which shows how you can manage records in bulk using a jupyter notebook, simple-salesforce and pandas. 
+Here is a helpful  `YouTube tutorial`_  which shows how you can manage records in bulk using a jupyter notebook, simple-salesforce and pandas.
 
 This can be a effective way to manage records, and perform simple operations like reassigning accounts, deleting test records, inserting new records, etc...
 

@@ -217,7 +217,7 @@ def async_retry_expired_session(async_fn):
         raise ValueError(
             (
                 "async_retry_expired_session can only decorate async "
-                "functions. {}".format(async_fn.__name__)
+                f"functions. {async_fn.__name__}"
             )
         )
 
@@ -338,7 +338,7 @@ class AsyncSalesforce:
         """Utility to generate headers when refreshing the session"""
         self.headers = {
             "Content-Type": "application/json",
-            "Authorization": "Bearer {}".format(self.session_id or ""),
+            "Authorization": f"Bearer {self.session_id or ''}",
             "X-PrettyPrint": "1",
         }
         return self.headers
