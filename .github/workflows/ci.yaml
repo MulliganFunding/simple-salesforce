@@ -11,12 +11,6 @@ jobs:
   tests:
     name: "Python ${{ matrix.python-version }}"
     runs-on: "ubuntu-latest"
-    env:
-      CODECOV_UPLOAD: false
-      PIPX_VERSION: "0.16.4"
-      POETRY_VERSION: "1.1.14"
-      PYPI_PUBLISH: false
-
     strategy:
       matrix:
         os: ["ubuntu-latest", "windows-latest", "macos-latest"]
