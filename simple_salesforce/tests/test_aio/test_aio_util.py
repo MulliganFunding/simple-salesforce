@@ -13,7 +13,7 @@ from simple_salesforce.exceptions import (
 from simple_salesforce.aio.aio_util import call_salesforce
 
 
-@pytest.mark.asyncio
+
 async def test_call_salesforce_happy_path(mock_httpx_client):
     """Test happy path responses: <= 300"""
     _, mock_client, inner = mock_httpx_client
@@ -29,7 +29,7 @@ async def test_call_salesforce_happy_path(mock_httpx_client):
     assert await call_salesforce(method="GET", url="www.example.com",) is happy_result
 
 
-@pytest.mark.asyncio
+
 @pytest.mark.parametrize(
     "status_code,exception_class",
     (

@@ -32,7 +32,7 @@ CASE_URL = DEFAULT_URL.format("Case")
 # build_async_salesforce_client (Login/Builder)
 #
 # # # # # # # # # # # # # # # # # # # # # #
-@pytest.mark.asyncio
+
 async def test_build_fail(constants, mock_httpx_client):
     """
     Test the builder function and pass a custom session
@@ -49,7 +49,7 @@ async def test_build_fail(constants, mock_httpx_client):
         )
 
 
-@pytest.mark.asyncio
+
 async def test_build_async_with_session_success(constants, mock_httpx_client):
     """
     Test the builder function and pass a custom session
@@ -76,7 +76,7 @@ async def test_build_async_with_session_success(constants, mock_httpx_client):
     assert call[2]["headers"]["SOAPAction"] == "login"
 
 
-@pytest.mark.asyncio
+
 async def test_build_async_with_org_id(constants, mock_httpx_client):
     """
     Test the builder function and pass a custom session
@@ -103,7 +103,7 @@ async def test_build_async_with_org_id(constants, mock_httpx_client):
     assert call[2]["headers"]["SOAPAction"] == "login"
 
 
-@pytest.mark.asyncio
+
 async def test_build_async_with_direct(constants, mock_httpx_client):
     """
     Test the builder function and pass a custom session
@@ -124,7 +124,7 @@ async def test_build_async_with_direct(constants, mock_httpx_client):
     assert len(mock_client.method_calls) == 0
 
 
-@pytest.mark.asyncio
+
 async def test_build_async_with_jwt(constants, mock_httpx_client):
     """
     Test the builder function and pass a custom session
@@ -181,7 +181,7 @@ def _create_sf_type(
     )
 
 
-@pytest.mark.asyncio
+
 @pytest.mark.parametrize("with_headers", (True, False))
 async def test_metadata_with_request_headers(with_headers, mock_httpx_client):
     """
@@ -208,7 +208,7 @@ async def test_metadata_with_request_headers(with_headers, mock_httpx_client):
         assert "Sforce-Auto-Assign" not in call[2]["headers"]
 
 
-@pytest.mark.asyncio
+
 @pytest.mark.parametrize("with_headers", (True, False))
 async def test_describe_with_request_headers(with_headers, mock_httpx_client):
     """
@@ -235,7 +235,7 @@ async def test_describe_with_request_headers(with_headers, mock_httpx_client):
         assert "Sforce-Auto-Assign" not in call[2]["headers"]
 
 
-@pytest.mark.asyncio
+
 @pytest.mark.parametrize("with_headers", (True, False))
 async def test_describe_layout_with_request_headers(with_headers, mock_httpx_client):
     """
@@ -262,7 +262,7 @@ async def test_describe_layout_with_request_headers(with_headers, mock_httpx_cli
         assert "Sforce-Auto-Assign" not in call[2]["headers"]
 
 
-@pytest.mark.asyncio
+
 @pytest.mark.parametrize("with_headers", (True, False))
 async def test_get_with_request_headers(with_headers, mock_httpx_client):
     """
@@ -290,7 +290,7 @@ async def test_get_with_request_headers(with_headers, mock_httpx_client):
         assert "Sforce-Auto-Assign" not in call[2]["headers"]
 
 
-@pytest.mark.asyncio
+
 @pytest.mark.parametrize("with_headers", (True, False))
 async def test_get_customid_with_request_headers(with_headers, mock_httpx_client):
     """
@@ -319,7 +319,7 @@ async def test_get_customid_with_request_headers(with_headers, mock_httpx_client
         assert "Sforce-Auto-Assign" not in call[2]["headers"]
 
 
-@pytest.mark.asyncio
+
 @pytest.mark.parametrize("with_headers", (True, False))
 async def test_create_with_request_headers(with_headers, mock_httpx_client):
     """
@@ -347,7 +347,7 @@ async def test_create_with_request_headers(with_headers, mock_httpx_client):
         assert "Sforce-Auto-Assign" not in call[2]["headers"]
 
 
-@pytest.mark.asyncio
+
 @pytest.mark.parametrize(
     "with_headers,with_raw_response",
     ((True, False), (True, True), (False, False), (False, True),),
@@ -388,7 +388,7 @@ async def test_update_with_request_headers(
         assert "Sforce-Auto-Assign" not in call[2]["headers"]
 
 
-@pytest.mark.asyncio
+
 @pytest.mark.parametrize(
     "with_headers,with_raw_response",
     ((True, False), (True, True), (False, False), (False, True),),
@@ -428,7 +428,7 @@ async def test_upsert_with_request_headers(
         assert "Sforce-Auto-Assign" not in call[2]["headers"]
 
 
-@pytest.mark.asyncio
+
 @pytest.mark.parametrize(
     "with_headers,with_raw_response",
     ((True, False), (True, True), (False, False), (False, True),),
@@ -464,7 +464,7 @@ async def test_delete_with_request_headers(
         assert "Sforce-Auto-Assign" not in call[2]["headers"]
 
 
-@pytest.mark.asyncio
+
 @pytest.mark.parametrize("with_headers", (True, False))
 async def test_deleted_with_request_headers(with_headers, mock_httpx_client):
     """
@@ -494,7 +494,7 @@ async def test_deleted_with_request_headers(with_headers, mock_httpx_client):
         assert "Sforce-Auto-Assign" not in call[2]["headers"]
 
 
-@pytest.mark.asyncio
+
 @pytest.mark.parametrize("with_headers", (True, False))
 async def test_updated_with_request_headers(with_headers, mock_httpx_client):
     """
@@ -524,7 +524,7 @@ async def test_updated_with_request_headers(with_headers, mock_httpx_client):
         assert "Sforce-Auto-Assign" not in call[2]["headers"]
 
 
-@pytest.mark.asyncio
+
 @pytest.mark.parametrize("float_parser", (None, decimal.Decimal))
 async def test_get_parse_float(float_parser, mock_httpx_client):
     """Ensure parse_float is used when None"""
@@ -550,7 +550,7 @@ def fake_file(tmp_path):
     return str(tmp_path / "hello.txt")
 
 
-@pytest.mark.asyncio
+
 async def test_upload_base64(fake_file, mock_httpx_client):
     """
     Upload file as base64
@@ -567,7 +567,7 @@ async def test_upload_base64(fake_file, mock_httpx_client):
     assert call[1][1] == sf_type.base_url
 
 
-@pytest.mark.asyncio
+
 async def test_update_base64(fake_file, mock_httpx_client):
     """
     Update base64 file
@@ -584,7 +584,7 @@ async def test_update_base64(fake_file, mock_httpx_client):
     assert call[1][1] == f"{sf_type.base_url}a1"
 
 
-@pytest.mark.asyncio
+
 async def test_get_base64(mock_httpx_client):
     """
     Get base64 file
@@ -617,7 +617,7 @@ def test_client_custom_version():
     assert client.base_url.split("/")[-2] == f"v{expected_version}"
 
 
-@pytest.mark.asyncio
+
 async def test_async_retry_expired_session_deco(
     mock_httpx_client, sf_client,
 ):
@@ -644,7 +644,7 @@ async def test_async_retry_expired_session_deco(
     assert sf_client.login_refresh.call_count == 1
 
 
-@pytest.mark.asyncio
+
 async def test_async_retry_expired_session_deco_sf_type(
     mock_httpx_client, sf_client,
 ):
@@ -692,7 +692,7 @@ def test_proxies_inherited_by_default(constants):
     assert client._proxies == client.Contact._proxies == constants["PROXIES"]
 
 
-@pytest.mark.asyncio
+
 async def test_api_usage_simple(mock_httpx_client, sf_client):
     """
     Test simple api usage parsing
@@ -708,7 +708,7 @@ async def test_api_usage_simple(mock_httpx_client, sf_client):
     assert sf_client.api_usage == {"api-usage": Usage(18, 5000)}
 
 
-@pytest.mark.asyncio
+
 async def test_api_usage_per_app(mock_httpx_client, sf_client):
     """
     Test per-app api usage parsing
@@ -727,7 +727,7 @@ async def test_api_usage_per_app(mock_httpx_client, sf_client):
     assert sf_client.api_usage == expected
 
 
-@pytest.mark.asyncio
+
 @pytest.mark.parametrize(
     "include_deleted,expected_url",
     ((True, "https://localhost/queryAll/"), (False, "https://localhost/query/"),),
@@ -749,7 +749,7 @@ async def test_query(
 
 
 
-@pytest.mark.asyncio
+
 async def test_search(
     mock_httpx_client, sf_client,
 ):
@@ -774,7 +774,7 @@ async def test_search(
     assert call[2]["params"] == {"q": "FIND {Joe Smith}"}
 
 
-@pytest.mark.asyncio
+
 @pytest.mark.parametrize(
     "include_deleted,expected_url",
     (
@@ -800,7 +800,7 @@ async def test_query_more_id_not_url(
 
 
 # pylint: disable=redefined-outer-name
-@pytest.mark.asyncio
+
 async def test_query_all_iter(
     mock_httpx_client, sf_client,
 ):
@@ -830,7 +830,7 @@ async def test_query_all_iter(
     assert len(mock_client.method_calls) == 2
 
 
-@pytest.mark.asyncio
+
 async def test_is_sandbox(
     mock_httpx_client, sf_client,
 ):
@@ -849,7 +849,7 @@ async def test_is_sandbox(
     assert len(mock_client.method_calls) == 1
 
 
-@pytest.mark.asyncio
+
 async def test_describe(
     mock_httpx_client, sf_client,
 ):
@@ -867,7 +867,7 @@ async def test_describe(
     assert call[2]["headers"] == {}
 
 
-@pytest.mark.asyncio
+
 async def test_query_all(
     mock_httpx_client, sf_client,
 ):
@@ -897,7 +897,7 @@ async def test_query_all(
     assert len(mock_client.method_calls) == 2
 
 
-@pytest.mark.asyncio
+
 async def test_api_limits(
     constants, mock_httpx_client, sf_client,
 ):
@@ -915,7 +915,7 @@ async def test_api_limits(
     assert result == constants["ORGANIZATION_LIMITS_RESPONSE"]
 
 
-@pytest.mark.asyncio
+
 async def test_md_deploy_success(
     mock_httpx_client, sf_client,
 ):
@@ -981,7 +981,7 @@ async def test_md_deploy_success_open(
 
 
 
-@pytest.mark.asyncio
+
 async def test_md_deploy_failed_status_code(
     mock_httpx_client, sf_client,
 ):
@@ -1147,7 +1147,7 @@ DEPLOY_IN_PROGRESS = (
 )
 
 
-@pytest.mark.asyncio
+
 async def test_check_status_pending(
     mock_httpx_client, sf_client,
 ):
@@ -1178,7 +1178,7 @@ async def test_check_status_pending(
     assert call[1][1] == f"{sf_client.metadata_url}deployRequest/abdcefg"
 
 
-@pytest.mark.asyncio
+
 async def test_check_status_success(
     mock_httpx_client, sf_client,
 ):
@@ -1210,7 +1210,7 @@ async def test_check_status_success(
     assert call[1][1] == f"{sf_client.metadata_url}deployRequest/abdcefg"
 
 
-@pytest.mark.asyncio
+
 async def test_check_status_payload_error(
     mock_httpx_client, sf_client,
 ):
@@ -1247,7 +1247,7 @@ async def test_check_status_payload_error(
     assert call[1][1] == f"{sf_client.metadata_url}deployRequest/abdcefg"
 
 
-@pytest.mark.asyncio
+
 async def test_check_status_in_progress(
     mock_httpx_client, sf_client,
 ):
@@ -1277,7 +1277,7 @@ async def test_check_status_in_progress(
     assert call[1][0] == "POST"
     assert call[1][1] == f"{sf_client.metadata_url}deployRequest/abdcefg"
 
-@pytest.mark.asyncio
+
 async def test_restful(
     mock_httpx_client, sf_client,
 ):
@@ -1296,7 +1296,7 @@ async def test_restful(
     assert len(mock_client.method_calls) == 1
 
 
-@pytest.mark.asyncio
+
 @pytest.mark.parametrize("content_type", ("application/json", ""))
 async def test_oauth2_with_or_without_json_result(
     content_type, mock_httpx_client, sf_client,
@@ -1324,7 +1324,7 @@ async def test_oauth2_with_or_without_json_result(
 # # Parsing Results Tests # #
 
 
-@pytest.mark.asyncio
+
 @pytest.mark.parametrize("float_parser", (None, decimal.Decimal))
 @pytest.mark.parametrize("object_pairs_hook", (None, OrderedDict))
 async def test_json_parsing_stratgies(

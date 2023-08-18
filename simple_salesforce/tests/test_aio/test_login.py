@@ -16,7 +16,7 @@ SOAP_URL = "https://login.salesforce.com/services/Soap/u/"
 OAUTH_TOKEN_URL = "https://login.salesforce.com/services/oauth2/token"
 
 
-@pytest.mark.asyncio
+
 async def test_default_domain_success(constants, mock_httpx_client):
     """Test login for default domain"""
     _, mock_client, inner = mock_httpx_client
@@ -39,7 +39,7 @@ async def test_default_domain_success(constants, mock_httpx_client):
     assert call[2]["headers"]["SOAPAction"] == "login"
 
 
-@pytest.mark.asyncio
+
 async def test_custom_domain_success(constants, mock_httpx_client):
     """Test login for custom domain"""
     _, mock_client, inner = mock_httpx_client
@@ -62,7 +62,7 @@ async def test_custom_domain_success(constants, mock_httpx_client):
     assert call[2]["headers"]["SOAPAction"] == "login"
 
 
-@pytest.mark.asyncio
+
 async def test_failure(mock_httpx_client):
     """Test login for custom domain"""
     _, mock_client, inner = mock_httpx_client
@@ -115,7 +115,7 @@ def sample_key(sample_key_filepath):
         return key_file.read()
 
 
-@pytest.mark.asyncio
+
 async def test_token_login_success_with_key_file(
     sample_key_filepath, constants, mock_httpx_client
 ):
@@ -142,7 +142,7 @@ async def test_token_login_success_with_key_file(
     )
 
 
-@pytest.mark.asyncio
+
 async def test_token_login_success_with_key_string(
     sample_key, constants, mock_httpx_client
 ):
@@ -169,7 +169,7 @@ async def test_token_login_success_with_key_string(
     )
 
 
-@pytest.mark.asyncio
+
 async def test_token_login_success_with_key_bytes(
     sample_key, constants, mock_httpx_client
 ):
@@ -196,7 +196,7 @@ async def test_token_login_success_with_key_bytes(
     )
 
 
-@pytest.mark.asyncio
+
 async def test_token_login_failure(mock_httpx_client, sample_key_filepath):
     """Test login for custom domain"""
     _, mock_client, inner = mock_httpx_client
@@ -228,7 +228,7 @@ async def test_token_login_failure(mock_httpx_client, sample_key_filepath):
     )
 
 
-@pytest.mark.asyncio
+
 async def test_token_login_failure_with_warning(
     mock_httpx_client, constants, sample_key_filepath
 ):
@@ -263,3 +263,54 @@ async def test_token_login_failure_with_warning(
     assert len(warning) >= 1
     assert issubclass(warning[-1].category, UserWarning)
     assert str(warning[-1].message) == constants["TOKEN_WARNING"]
+
+
+async def test_connected_app_login_success(constants, mock_httpx_client):
+    """Test a successful connected app login with a key file"""
+    _, mock_client, inner = mock_httpx_client
+    happy_result = httpx.Response(
+        200, content=constants["TOKEN_LOGIN_RESPONSE_SUCCESS"]
+    )
+    inner(happy_result)
+    (session_id, instance_url) = await AsyncSalesforceLogin(
+        username="foo@bar.com",
+        password="password",
+        consumer_key="12345.abcde",
+        consumer_secret="12345.abcde"
+    )
+    assert session_id == constants["SESSION_ID"]
+    assert instance_url == urlparse(constants["INSTANCE_URL"]).netloc
+    assert len(mock_client.method_calls) == 1
+    call = mock_client.method_calls[0]
+    assert call[0] == "post"
+    assert call[1][0].startswith(OAUTH_TOKEN_URL)
+    assert call[2]["data"]["grant_type"] == "password"
+
+
+async def test_connected_app_login_failure(mock_httpx_client):
+    """Test a failed connected app login"""
+    _, mock_client, inner = mock_httpx_client
+    fail_result = httpx.Response(
+        400,
+        request=httpx.Request("POST", "login.my.salesforce.com"),
+        content=json.dumps({
+            "error": "invalid_client_id",
+            "error_description": "client identifier invalid"
+        }),
+    )
+    inner(fail_result)
+
+    with pytest.raises(SalesforceAuthenticationFailed):
+        await AsyncSalesforceLogin(
+            username='myemail@example.com.sandbox',
+            password='password',
+            consumer_key='12345.abcde',
+            consumer_secret='12345.abcde'
+        )
+    assert len(mock_client.method_calls) == 1
+    call = mock_client.method_calls[0]
+
+    assert call[0] == "post"
+    assert call[1][0].startswith(OAUTH_TOKEN_URL)
+    assert call[2]["data"]["grant_type"] == "password"
+    assert call[2]["data"]["client_id"] == "12345.abcde"

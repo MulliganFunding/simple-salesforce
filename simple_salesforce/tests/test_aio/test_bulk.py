@@ -64,7 +64,7 @@ EXPECTED_QUERY = [
 ]
 
 
-@pytest.mark.asyncio
+
 @pytest.mark.parametrize(
     "operation,method_name",
     (
@@ -120,7 +120,7 @@ async def test_insert(operation, method_name, sf_client, mock_httpx_client):
     assert EXPECTED_RESULT == result
 
 
-@pytest.mark.asyncio
+
 async def test_upsert(sf_client, mock_httpx_client):
     """Test bulk upsert records"""
     _, mock_client, _ = mock_httpx_client
@@ -154,7 +154,7 @@ async def test_upsert(sf_client, mock_httpx_client):
     assert EXPECTED_RESULT == result
 
 
-@pytest.mark.asyncio
+
 async def test_query(mock_httpx_client, sf_client):
     """Test bulk query"""
     _, mock_client, _ = mock_httpx_client
@@ -219,7 +219,7 @@ async def test_query(mock_httpx_client, sf_client):
     assert body8[1] in result
 
 
-@pytest.mark.asyncio
+
 async def test_query_all(mock_httpx_client, sf_client):
     """Test bulk query all"""
     _, mock_client, _ = mock_httpx_client
@@ -286,7 +286,7 @@ async def test_query_all(mock_httpx_client, sf_client):
     assert body8[1] in result
 
 
-@pytest.mark.asyncio
+
 async def test_query_lazy(mock_httpx_client, sf_client):
     """Test lazy bulk query"""
     _, mock_client, _ = mock_httpx_client
@@ -361,7 +361,7 @@ async def test_query_lazy(mock_httpx_client, sf_client):
     # 'FirstName': 'Alice', 'LastName': 'y'}]]
 
 
-@pytest.mark.asyncio
+
 async def test_query_fail(mock_httpx_client, sf_client):
     """Test bulk query records failure"""
     _, mock_client, _ = mock_httpx_client
