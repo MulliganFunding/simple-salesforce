@@ -1,0 +1,39 @@
+[tool.poetry]
+name = "async-simple-salesforce"
+version = "0.1.0"
+description = "Async fork of simple-salesforce"
+authors = ["Erik Aker <eaker@mulliganfunding.com>"]
+license = "Apache-2.0"
+readme = "README.md"
+packages = [{include = "simple_salesforce"}]
+
+[tool.poetry.dependencies]
+python = "^3.10"
+aiofiles = "<24"
+cryptography = "*"
+httpx = "<1"
+PyJWT = "^2.8"
+requests = "<3"
+zeep = "<5"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^7.4.0"
+responses = "^0.23.3"
+pytz = "^2023.3"
+pytest-coverage = "^0.0"
+pytest-asyncio = "^0.21.1"
+pylint = "^2.17.5"
+twine = "^3.8.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.pytest.ini_options]
+minversion = "7.0"
+asyncio_mode = "auto"
+pythonpath = "."
+addopts = "--cov=simple_salesforce --cov-report html"
+testpaths = [
+    "tests",
+]
