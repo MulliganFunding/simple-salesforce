@@ -11,6 +11,9 @@ This fork is available on PyPI:
     pip install async-simple-salesforce
 
 
+Note: versioning for this library tracks the upstream fork version it was last updated from.
+
+
 How to Use
 --------------------------
 
@@ -23,10 +26,10 @@ For instance, here's how to create and use an async Salesforce client:
     import asyncio
     import datetime
 
-    from simple_salesforce.aio import build_async_salesforce_client
+    from simple_salesforce.aio import build_async_salesforce_client, AsyncSalesforce
 
 
-    async def create_client(username, consumer_key, private_key):
+    async def create_client(username, consumer_key, private_key) -> AsyncSalesforce:
         # build_async_salesforce_client accepts all args of simple-salesforce Login
         return await build_async_salesforce_client(
                 username=username,
