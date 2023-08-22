@@ -1,61 +1,4 @@
 *****************
-Async Simple Salesforce
-*****************
-
-This is an **async fork** of the library simple-salesforce: https://github.com/simple-salesforce/simple-salesforce.
-
-This fork is available on PyPI:
-
-.. code-block:: console
-
-    pip install async-simple-salesforce
-
-
-Note: versioning for this library tracks the upstream fork version it was last updated from.
-
-
-How to Use
---------------------------
-
-This library attempts to offer the same API as `simple-salesforce` inside an `aio` subpackage.
-
-For instance, here's how to create and use an async Salesforce client:
-
-.. code-block:: python
-
-    import asyncio
-    import datetime
-
-    from simple_salesforce.aio import build_async_salesforce_client, AsyncSalesforce
-
-
-    async def create_client(username, consumer_key, private_key) -> AsyncSalesforce:
-        # build_async_salesforce_client accepts all args of simple-salesforce Login
-        return await build_async_salesforce_client(
-                username=username,
-                consumer_key=consumer_key,
-                privatekey_file=private_key,
-                request_timeout_seconds=60 * 2,
-            )
-
-    async def update_contact(sf_client):
-        end = datetime.datetime.now(pytz.UTC) # we need to use UTC as salesforce API requires this
-        await sf_client.Contact.updated(end - datetime.timedelta(days=10), end)
-
-
-    async def run_query(sf_client, opportunity_name: str):
-        query = (
-            f"SELECT Id,StageName from Opportunity where "
-            f"Name='{opportunity_name}'"
-        )
-        return await sf_client.query_all(search)
-
-=============
-
-Simple-Salesforce Documentation Below
---------------------------
-
-*****************
 Simple Salesforce
 *****************
 
@@ -65,10 +8,6 @@ Simple Salesforce
 .. image:: https://readthedocs.org/projects/simple-salesforce/badge/?version=latest
    :target: http://simple-salesforce.readthedocs.io/en/latest/?badge=latest
    :alt: Documentation Status
-
-Simple Salesforce is a basic Salesforce.com REST API client built for Python 3.6, 3.7 3.8, 3.9, 3.10, and 3.11. The goal is to provide a very low-level interface to the REST Resource and APEX API, returning a dictionary of the API JSON response.
-
-=============
 
 Simple Salesforce is a basic Salesforce.com REST API client built for Python 3.6, 3.7 3.8, 3.9, 3.10, and 3.11. The goal is to provide a very low-level interface to the REST Resource and APEX API, returning a dictionary of the API JSON response.
 
