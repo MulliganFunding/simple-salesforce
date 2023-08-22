@@ -1,12 +1,15 @@
 """Test for bulk.py"""
 import copy
+import itertools
 import json
+import random
 from unittest import mock
 
 import httpx
 import pytest
 
 from simple_salesforce.exceptions import SalesforceGeneralError
+from simple_salesforce.aio.bulk import AsyncSFBulkType
 
 
 def test_bulk_handler(sf_client, constants):
@@ -61,7 +64,7 @@ EXPECTED_QUERY = [
 ]
 
 
-@pytest.mark.asyncio
+
 @pytest.mark.parametrize(
     "operation,method_name",
     (
@@ -117,7 +120,7 @@ async def test_insert(operation, method_name, sf_client, mock_httpx_client):
     assert EXPECTED_RESULT == result
 
 
-@pytest.mark.asyncio
+
 async def test_upsert(sf_client, mock_httpx_client):
     """Test bulk upsert records"""
     _, mock_client, _ = mock_httpx_client
@@ -151,7 +154,7 @@ async def test_upsert(sf_client, mock_httpx_client):
     assert EXPECTED_RESULT == result
 
 
-@pytest.mark.asyncio
+
 async def test_query(mock_httpx_client, sf_client):
     """Test bulk query"""
     _, mock_client, _ = mock_httpx_client
@@ -216,7 +219,7 @@ async def test_query(mock_httpx_client, sf_client):
     assert body8[1] in result
 
 
-@pytest.mark.asyncio
+
 async def test_query_all(mock_httpx_client, sf_client):
     """Test bulk query all"""
     _, mock_client, _ = mock_httpx_client
@@ -283,7 +286,7 @@ async def test_query_all(mock_httpx_client, sf_client):
     assert body8[1] in result
 
 
-@pytest.mark.asyncio
+
 async def test_query_lazy(mock_httpx_client, sf_client):
     """Test lazy bulk query"""
     _, mock_client, _ = mock_httpx_client
@@ -358,7 +361,7 @@ async def test_query_lazy(mock_httpx_client, sf_client):
     # 'FirstName': 'Alice', 'LastName': 'y'}]]
 
 
-@pytest.mark.asyncio
+
 async def test_query_fail(mock_httpx_client, sf_client):
     """Test bulk query records failure"""
     _, mock_client, _ = mock_httpx_client
@@ -399,3 +402,88 @@ async def test_query_fail(mock_httpx_client, sf_client):
         assert exc.status == body5["state"]
         assert exc.resource_name == body5["jobId"]
         assert exc.content == body5["stateMessage"]
+
+
+async def test_bulk_operation_auto_batch_size(mock_httpx_client, sf_client):
+    """Test that batch_size="auto" leads to using _add_autosized_batches"""
+    _, mock_client, _ = mock_httpx_client
+    operation = "update"
+    body1 = {
+        "apiVersion": 42.0,
+        "concurrencyMode": "Parallel",
+        "contentType": "JSON","id": "Job-1",
+        "object": "Contact",
+        "operation": operation,
+        "state": "Open"
+    }
+    body2 = {
+        "apiVersion" : 42.0,
+        "concurrencyMode" : "Parallel",
+        "contentType" : "JSON",
+        "id" : "Job-1",
+        "object" : "Contact",
+        "operation" : operation,
+        "state" : "Closed"
+    }
+
+    all_bodies = [body1, body2]
+    responses = [httpx.Response(200, content=json.dumps(body)) for body in all_bodies]
+    mock_client.request.side_effect = mock.AsyncMock(side_effect=responses)
+
+    data = [{
+        'AccountId': 'ID-1',
+        'Email': 'contact1@example.com',
+        'FirstName': 'Bob',
+        'LastName': 'x'
+    }]
+    await sf_client.bulk.Contact._bulk_operation(
+        operation, data, batch_size="auto"
+    )
+    assert len(mock_client.method_calls) == 2
+    call1, call2 = mock_client.method_calls
+    http_methods = set((call1[1][0], call2[1][0]))
+    http_urls = (call1[1][1], call2[1][1])
+    assert http_methods == {"POST"}
+    assert http_urls[0].endswith("/async/job")
+    assert http_urls[1].endswith("/async/job/Job-1")
+
+
+@mock.patch('simple_salesforce.aio.bulk.AsyncSFBulkType._add_batch')
+async def test_add_autosized_batches(add_batch, mock_httpx_client, sf_client):
+    """Test that _add_autosized_batches batches all records correctly"""
+    # _add_autosized_batches passes the return values from add_batch, so we
+    # can pass the data it was given back so that we can test it
+
+    data = [
+        # Expected serialized record size of 13 to 1513. Idea is that
+        # earlier record batches are split on record count, whereas later
+        # batches are split for hitting the byte limit.
+        {'key': 'value' * random.randint(0, i // 50)}
+        for i in range(30000)
+    ]
+
+    add_batch.side_effect = lambda job_id, data, operation: data
+    sf_bulk_type = AsyncSFBulkType(None, None, None, None)
+    result = await sf_bulk_type._add_autosized_batches(  # pylint: disable=protected-access
+        data=data, operation="update", job="Job-1"
+    )
+    reconstructed_data = list(itertools.chain(*result))
+    # all data was put in a batch
+    assert len(data) == len(reconstructed_data)
+    assert data == list(itertools.chain(*result))
+
+    for i, batch in enumerate(result):
+        record_count = len(batch)
+        size_in_bytes = len(json.dumps(batch))
+        is_last_batch = i == len(result) - 1
+        # Check that all batches are within limits
+        assert record_count <= 10_000
+        assert size_in_bytes <= 10_000_000
+        # ... and that - except for the last batch - all batches have maxed
+        # out one of the two limits
+        assert (
+            is_last_batch or
+            record_count == 10_000 or
+            (size_in_bytes + len(json.dumps(result[i + 1][0])) + 2
+                > 10_000_000)
+        )

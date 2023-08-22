@@ -15,21 +15,11 @@ def create_session_factory(
     AsyncClient.
     """
     if proxies and timeout:
-        return partial(
-            httpx.AsyncClient,
-            proxies=proxies,
-            timeout=timeout
-        )
-    elif proxies:
-        return partial(
-            httpx.AsyncClient,
-            proxies=proxies
-        )
-    elif timeout:
-        return partial(
-            httpx.AsyncClient,
-            timeout=timeout
-        )
+        return partial(httpx.AsyncClient, proxies=proxies, timeout=timeout)
+    if proxies:
+        return partial(httpx.AsyncClient, proxies=proxies)
+    if timeout:
+        return partial(httpx.AsyncClient, timeout=timeout)
 
     return partial(httpx.AsyncClient)
 
@@ -50,9 +40,9 @@ async def call_salesforce(
     else:
         client = httpx.AsyncClient()
 
-    headers = headers or dict()
-    additional_headers = kwargs.pop("additional_headers", dict())
-    headers.update(additional_headers or dict())
+    headers = headers or {}
+    additional_headers = kwargs.pop("additional_headers", {})
+    headers.update(additional_headers or {})
     async with client as session:
         result = await session.request(method, url, headers=headers, **kwargs)
     if result.status_code >= 300:

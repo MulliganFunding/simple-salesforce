@@ -14,7 +14,10 @@ import warnings
 import httpx
 
 from simple_salesforce.api import DEFAULT_API_VERSION, PerAppUsage, Usage
-from simple_salesforce.exceptions import SalesforceExpiredSession, SalesforceGeneralError
+from simple_salesforce.exceptions import (
+    SalesforceExpiredSession,
+    SalesforceGeneralError,
+)
 from simple_salesforce.util import date_to_iso8601, exception_handler
 from .bulk import AsyncSFBulkHandler
 from .login import AsyncSalesforceLogin
@@ -39,6 +42,7 @@ async def build_async_salesforce_client(
     client_id: Optional[str] = None,
     domain: Optional[str] = None,
     consumer_key: Optional[str] = None,
+    consumer_secret=None,
     privatekey_file=None,
     privatekey=None,
     parse_float=None,
@@ -66,6 +70,10 @@ async def build_async_salesforce_client(
                 common domains, such as 'login' or 'test', or
                 Salesforce My domain. If not used, will default to
                 'login'.
+
+    OAuth 2.0 Connected App Token Authentication:
+    * consumer_key -- the consumer key generated for the user
+    * consumer_secret -- the consumer secret generated for the user
 
     OAuth 2.0 JWT Bearer Token Authentication:
     * consumer_key -- the consumer key generated for the user
@@ -110,7 +118,7 @@ async def build_async_salesforce_client(
         "parse_float": parse_float,
         "object_pairs_hook": object_pairs_hook,
         "request_timeout_seconds": request_timeout_seconds,
-        "session_factory": session_factory
+        "session_factory": session_factory,
     }
 
     # Determine if the user wants to use our username/password auth or pass
@@ -141,7 +149,7 @@ async def build_async_salesforce_client(
             instance_kwargs["sf_instance"] = urlparse(instance_url).hostname
             port = urlparse(instance_url).port
             if port not in (None, 443):
-                instance_kwargs["sf_instance"] += ":" + str(port)
+                instance_kwargs["sf_instance"] += f":{port}"
             instance_kwargs["sf_instance"] = urlparse(instance_url).hostname
         else:
             instance_kwargs["sf_instance"] = instance
@@ -157,6 +165,22 @@ async def build_async_salesforce_client(
             sf_version=version,
             proxies=proxies,
             client_id=client_id,
+            domain=domain,
+        )
+    elif all(
+        arg is not None for arg in (username, password, consumer_key, consumer_secret)
+    ):
+        instance_kwargs["auth_type"] = "password"
+
+        # Pass along the username/password to our login helper
+        login_refresh = partial(
+            AsyncSalesforceLogin,
+            session_factory=session_factory,
+            username=username,
+            password=password,
+            consumer_key=consumer_key,
+            consumer_secret=consumer_secret,
+            proxies=proxies,
             domain=domain,
         )
     elif all(
@@ -193,7 +217,7 @@ def async_retry_expired_session(async_fn):
         raise ValueError(
             (
                 "async_retry_expired_session can only decorate async "
-                "functions. {}".format(async_fn.__name__)
+                f"functions. {async_fn.__name__}"
             )
         )
 
@@ -205,6 +229,7 @@ def async_retry_expired_session(async_fn):
             if not client.can_refresh:
                 # No automatic refresh
                 raise
+
             await client.refresh_session()
             return await async_fn(client, *args, **kwargs)
 
@@ -218,6 +243,7 @@ class AsyncSalesforce:
     An instance of AsyncSalesforce is a handy way to wrap a Salesforce session
     for easy use of the Salesforce REST API. All http network calls are async.
     """
+
     _parse_float = None
     _object_pairs_hook = OrderedDict
 
@@ -234,7 +260,7 @@ class AsyncSalesforce:
         parse_float=None,
         object_pairs_hook=OrderedDict,
         request_timeout_seconds: Optional[int] = None,
-        login_refresh: Optional[Callable[[], Awaitable[Tuple[str, str]]]] = None
+        login_refresh: Optional[Callable[[], Awaitable[Tuple[str, str]]]] = None,
     ):
         """Initialize the instance with the given parameters.
 
@@ -273,26 +299,21 @@ class AsyncSalesforce:
 
         # override custom session proxies dance
         if not self.session_factory:
-            self.session_factory = create_session_factory(self._proxies, timeout=self.request_timeout_seconds)
+            self.session_factory = create_session_factory(
+                self._proxies, timeout=self.request_timeout_seconds
+            )
 
-        self.auth_site = "https://{domain}.salesforce.com".format(domain=self.domain)
+        self.auth_site = f"https://{domain}.salesforce.com"
         self.headers = self._generate_headers()
 
-        self.base_url = "https://{instance}/services/data/v{version}/".format(
-            instance=self.sf_instance, version=self.sf_version
+        self.base_url = f"https://{self.sf_instance}/services/data/v{self.sf_version}/"
+        self.apex_url = f"https://{self.sf_instance}/services/apexrest/"
+        self.bulk_url = f"https://{self.sf_instance}/services/async/{self.sf_version}/"
+        self.metadata_url = (
+            f"https://{self.sf_instance}/services/Soap/m/{self.sf_version}/"
         )
-        self.apex_url = "https://{instance}/services/apexrest/".format(
-            instance=self.sf_instance
-        )
-        self.bulk_url = "https://{instance}/services/async/{version}/".format(
-            instance=self.sf_instance, version=self.sf_version
-        )
-        self.metadata_url = "https://{instance}/services/Soap/m/{version}/".format(
-            instance=self.sf_instance, version=self.sf_version
-        )
-        self.oauth2_url = ('https://{instance}/services/oauth2/'
-                           .format(instance=self.sf_instance))
-        self.tooling_url = "{base_url}tooling/".format(base_url=self.base_url)
+        self.oauth2_url = f"https://{self.sf_instance}/services/oauth2/"
+        self.tooling_url = f"{self.base_url}tooling/"
 
         self.api_usage = {}
         self._parse_float = parse_float
@@ -309,7 +330,7 @@ class AsyncSalesforce:
                 instance=self.sf_instance,
                 metadata_url=self.metadata_url,
                 api_version=self.sf_version,
-                headers=self.headers
+                headers=self.headers,
             )
         return self._mdapi
 
@@ -317,7 +338,7 @@ class AsyncSalesforce:
         """Utility to generate headers when refreshing the session"""
         self.headers = {
             "Content-Type": "application/json",
-            "Authorization": "Bearer {}".format(self.session_id or ""),
+            "Authorization": f"Bearer {self.session_id or ''}",
             "X-PrettyPrint": "1",
         }
         return self.headers
@@ -326,8 +347,8 @@ class AsyncSalesforce:
         """Utility to refresh the session when expired"""
         if self.login_refresh is None:
             raise RuntimeError(
-                'The simple_salesforce session can not refreshed if a '
-                'session id has been provided.'
+                "The simple_salesforce session can not refreshed if a "
+                "session id has been provided."
             )
         self.session_id, self.sf_instance = await self.login_refresh()
         self._generate_headers()
@@ -388,7 +409,10 @@ class AsyncSalesforce:
         if name == "bulk":
             # Deal with bulk API functions
             return AsyncSFBulkHandler(
-                self.session_id, self.bulk_url, self._proxies, session_factory=self.session_factory
+                self.session_id,
+                self.bulk_url,
+                self._proxies,
+                session_factory=self.session_factory,
             )
 
         return AsyncSFType(
@@ -399,6 +423,8 @@ class AsyncSalesforce:
             proxies=self._proxies,
             salesforce=self,
             session_factory=self.session_factory,
+            object_pairs_hook=self._object_pairs_hook,
+            parse_float=self._parse_float,
         )
 
     # User utility methods
@@ -414,8 +440,7 @@ class AsyncSalesforce:
         * user: the userID of the user to set
         * password: the new password
         """
-
-        url = self.base_url + "sobjects/User/%s/password" % user
+        url = f"{self.base_url}sobjects/User/{user}/password"
         params = {"NewPassword": password}
 
         result = await self._call_salesforce("POST", url, data=json.dumps(params))
@@ -455,7 +480,7 @@ class AsyncSalesforce:
         return json_result
 
     # OAuth Endpoints Function
-    async def oauth2(self, path, params=None, method='GET'):
+    async def oauth2(self, path, params=None, method="GET"):
         """Allows you to make a request to OAuth endpoints if you know the path
 
         Arguments:
@@ -467,14 +492,14 @@ class AsyncSalesforce:
         * other arguments supported by requests.request (e.g. json, timeout)
         """
         url = self.oauth2_url + path
-        result = await self._call_salesforce(
-            method, url, name=path, params=params
-        )
+        result = await self._call_salesforce(method, url, name=path, params=params)
 
-        content_type = result.headers.get('Content-Type')
-        json_result = self.parse_result_to_json(result) \
-            if content_type is not None \
-               and 'json' in content_type else None
+        content_type = result.headers.get("Content-Type")
+        json_result = (
+            self.parse_result_to_json(result)
+            if content_type is not None and "json" in content_type
+            else None
+        )
 
         return None if json_result and len(json_result) == 0 else json_result
 
@@ -511,7 +536,7 @@ class AsyncSalesforce:
                     string will be wrapped to read `FIND {Waldo}` before being
                     sent to Salesforce
         """
-        search_string = "FIND {{{search_string}}}".format(search_string=search)
+        search_string = f"FIND {{{search}}}"
         return await self.search(search_string)
 
     async def limits(self, **kwargs):
@@ -549,7 +574,7 @@ class AsyncSalesforce:
         next_records_identifier,
         identifier_is_url=False,
         include_deleted=False,
-        **kwargs
+        **kwargs,
     ):
         """Retrieves more results from a query that returned more results
         than the batch maximum. Returns a dict decoded from the Salesforce
@@ -570,15 +595,10 @@ class AsyncSalesforce:
         """
         if identifier_is_url:
             # Don't use `self.base_url` here because the full URI is provided
-            url = "https://{instance}{next_record_url}".format(
-                instance=self.sf_instance, next_record_url=next_records_identifier
-            )
+            url = f"https://{self.sf_instance}{next_records_identifier}"
         else:
             endpoint = "queryAll" if include_deleted else "query"
-            url = self.base_url + "{query_endpoint}/{next_record_id}"
-            url = url.format(
-                query_endpoint=endpoint, next_record_id=next_records_identifier
-            )
+            url = f"{self.base_url}{endpoint}/{next_records_identifier}"
         result = await self._call_salesforce("GET", url, name="query_more", **kwargs)
 
         return self.parse_result_to_json(result)
@@ -661,7 +681,7 @@ class AsyncSalesforce:
             self.tooling_url + action,
             name="toolingexecute",
             data=json_data,
-            **kwargs
+            **kwargs,
         )
         try:
             response_content = result.json()
@@ -696,7 +716,9 @@ class AsyncSalesforce:
         return response_content
 
     @async_retry_expired_session
-    async def _call_salesforce(self, method, url, name="", **kwargs):
+    async def _call_salesforce(
+        self, method, url, name="", _has_refreshed=False, **kwargs
+    ):
         """Utility method for performing HTTP call to Salesforce.
 
         Returns a `requests.result` object.
@@ -747,7 +769,6 @@ class AsyncSalesforce:
 
     # file-based deployment function
     async def deploy(self, zipfile, sandbox, **kwargs):
-
         """Deploy using the Salesforce Metadata API. Wrapper for
         SfdcMetaDataApi.deploy(...).
 
@@ -793,18 +814,17 @@ class AsyncSalesforce:
         return results
 
     def parse_result_to_json(self, response: httpx.Response) -> Any:
-        """"Parse json from a Response object"""
+        """ "Parse json from a Response object"""
         return response.json(
-            object_pairs_hook=self._object_pairs_hook,
-            parse_float=self._parse_float
+            object_pairs_hook=self._object_pairs_hook, parse_float=self._parse_float
         )
 
 
 class AsyncSFType:
     """An interface to a specific type of SObject"""
+
     _parse_float = None
     _object_pairs_hook = OrderedDict
-
 
     # pylint: disable=too-many-arguments
     def __init__(
@@ -839,11 +859,15 @@ class AsyncSFType:
                     otherwise exposed by simple_salesforce.
         * request_timeout_seconds -- Optional request-timeout setting in seconds
                                      (for each request; for more timeout options, use `session`).
+        * parse_float -- Function to parse float values with. Is passed along to
+                         https://docs.python.org/3/library/json.html#json.load
+        * object_pairs_hook -- Function to parse ordered list of pairs in json.
+                               To use python 'dict' change it to None or dict.
         """
         if salesforce is None and session_id is None:
             raise RuntimeError(
-                'The argument session_id or salesforce must be specified to '
-                'instanciate SFType.'
+                "The argument session_id or salesforce must be specified to "
+                "instanciate SFType."
             )
 
         self._session_id = session_id
@@ -856,7 +880,9 @@ class AsyncSFType:
         self.request_timeout_seconds = request_timeout_seconds
 
         if session is not None:
-            warnings.warn("The session keyword argument for async clients is deprecated")
+            warnings.warn(
+                "The session keyword argument for async clients is deprecated"
+            )
         if proxies and session:
             logger.warning(
                 "Proxies must be defined on custom session object, "
@@ -864,17 +890,21 @@ class AsyncSFType:
                 proxies,
             )
         # override custom session proxies dance
-        if not self.session_factory and self.salesforce and self.salesforce.session_factory:
+        if (
+            not self.session_factory
+            and self.salesforce
+            and self.salesforce.session_factory
+        ):
             self.session_factory = self.salesforce.session_factory
         elif not self.session_factory:
-            self.session_factory = create_session_factory(proxies=self._proxies, timeout=self.request_timeout_seconds)
+            self.session_factory = create_session_factory(
+                proxies=self._proxies, timeout=self.request_timeout_seconds
+            )
 
         self.api_usage = {}
         self.base_url = (
-            "https://{instance}/services/data/v{sf_version}/sobjects"
-            "/{object_name}/".format(
-                instance=sf_instance, object_name=object_name, sf_version=sf_version
-            )
+            f"https://{sf_instance}/services/data/v{sf_version}/sobjects"
+            f"/{object_name}/"
         )
 
     @property
@@ -933,7 +963,7 @@ class AsyncSFType:
         * record_id -- the Id of the SObject to get
         * headers -- a dict with additional request headers.
         """
-        custom_url_part = "describe/layouts/{record_id}".format(record_id=record_id)
+        custom_url_part = f"describe/layouts/{record_id}"
         result = await self._call_salesforce(
             method="GET", url=urljoin(self.base_url, custom_url_part), headers=headers
         )
@@ -967,12 +997,7 @@ class AsyncSFType:
         * custom_id - the External ID value of the SObject to get
         * headers -- a dict with additional request headers.
         """
-        custom_url = urljoin(
-            self.base_url,
-            "{custom_id_field}/{custom_id}".format(
-                custom_id_field=custom_id_field, custom_id=custom_id
-            ),
-        )
+        custom_url = urljoin(self.base_url, f"{custom_id_field}/{custom_id}")
         result = await self._call_salesforce(
             method="GET", url=custom_url, headers=headers
         )
@@ -1080,9 +1105,7 @@ class AsyncSFType:
         """
         url = urljoin(
             self.base_url,
-            "deleted/?start={start}&end={end}".format(
-                start=date_to_iso8601(start), end=date_to_iso8601(end)
-            ),
+            f"deleted/?start={date_to_iso8601(start)}&end={date_to_iso8601(end)}",
         )
         result = await self._call_salesforce(method="GET", url=url, headers=headers)
         return self.parse_result_to_json(result)
@@ -1103,9 +1126,7 @@ class AsyncSFType:
         """
         url = urljoin(
             self.base_url,
-            "updated/?start={start}&end={end}".format(
-                start=date_to_iso8601(start), end=date_to_iso8601(end)
-            ),
+            f"updated/?start={date_to_iso8601(start)}&end={date_to_iso8601(end)}",
         )
         result = await self._call_salesforce(method="GET", url=url, headers=headers)
         return self.parse_result_to_json(result)
@@ -1147,51 +1168,54 @@ class AsyncSFType:
         return response
 
     def parse_result_to_json(self, response: httpx.Response) -> Any:
-        """"Parse json from a Response object"""
+        """ "Parse json from a Response object"""
         return response.json(
-            object_pairs_hook=self._object_pairs_hook,
-            parse_float=self._parse_float
+            object_pairs_hook=self._object_pairs_hook, parse_float=self._parse_float
         )
 
-    async def upload_base64(self, file_path, base64_field='Body', headers=None,
-                      **kwargs):
+    async def upload_base64(
+        self, file_path, base64_field="Body", headers=None, **kwargs
+    ):
         """Upload base64 encoded file to Salesforce"""
         data = {}
         async with aiofiles.open(file_path, "rb") as fl:
             content = await fl.read()
-            body = base64.b64encode(content).decode('utf-8')
+            body = base64.b64encode(content).decode("utf-8")
         data[base64_field] = body
         result = await self._call_salesforce(
-            method='POST',
-            url=self.base_url,
-            headers=headers,
-            json=data,
-            **kwargs
+            method="POST", url=self.base_url, headers=headers, json=data, **kwargs
         )
 
         return result
 
-    async def update_base64(self, record_id, file_path, base64_field='Body',
-                      headers=None, raw_response=False,
-                      **kwargs):
+    async def update_base64(
+        self,
+        record_id,
+        file_path,
+        base64_field="Body",
+        headers=None,
+        raw_response=False,
+        **kwargs,
+    ):
         """Updated base64 image from file to Salesforce"""
         data = {}
         async with aiofiles.open(file_path, "rb") as fl:
             content = await fl.read()
-            body = base64.b64encode(content).decode('utf-8')
+            body = base64.b64encode(content).decode("utf-8")
         data[base64_field] = body
         result = await self._call_salesforce(
-            method='PATCH',
+            method="PATCH",
             url=urljoin(self.base_url, record_id),
             json=data,
             headers=headers,
-            **kwargs
+            **kwargs,
         )
 
         return self._raw_response(result, raw_response)
 
-    async def get_base64(self, record_id, base64_field='Body', data=None,
-                   headers=None, **kwargs):
+    async def get_base64(
+        self, record_id, base64_field="Body", data=None, headers=None, **kwargs
+    ):
         """Returns binary stream of base64 object at specific path.
 
         Arguments:
@@ -1201,13 +1225,11 @@ class AsyncSFType:
                      sobjects/ContentVersion/ABC123/VersionData
         """
         result = await self._call_salesforce(
-            method='GET',
-            url=urljoin(
-                self.base_url, '{record_id}/{base64_field}'.format(
-                    record_id=record_id, base64_field=base64_field)),
+            method="GET",
+            url=urljoin(self.base_url, f"{record_id}/{base64_field}"),
             data=data,
             headers=headers,
-            **kwargs
+            **kwargs,
         )
 
         return result.content
