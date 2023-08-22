@@ -2,7 +2,7 @@
 Async Simple Salesforce
 *****************
 
-This is an **async fork** of the library [`simple-salesforce`](https://github.com/simple-salesforce/simple-salesforce).
+This is an **async fork** of the library simple-salesforce: https://github.com/simple-salesforce/simple-salesforce.
 
 This fork is available on PyPI:
 
