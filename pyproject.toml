@@ -4,8 +4,10 @@ version = "1.12.4a1"
 description = "Async fork of simple-salesforce"
 authors = ["Erik Aker <eaker@mulliganfunding.com>"]
 license = "Apache-2.0"
-readme = "README.md"
+readme = ["README_ASYNC.md", "README.rst"]
+repository = "https://github.com/MulliganFunding/simple-salesforce"
 packages = [{include = "simple_salesforce"}]
+include = ["LICENSE.txt"]
 
 [tool.poetry.dependencies]
 python = "^3.10"
