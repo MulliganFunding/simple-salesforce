@@ -13,7 +13,7 @@ from cryptography.hazmat.primitives import serialization
 import httpx
 import pytest
 
-from simple_salesforce.api import PerAppUsage, Usage
+from simple_salesforce.api import PerAppUsage, Usage, DEFAULT_API_VERSION
 from simple_salesforce.aio.api import (
     build_async_salesforce_client,
     AsyncSalesforce,
@@ -23,7 +23,7 @@ from simple_salesforce.exceptions import SalesforceGeneralError
 from simple_salesforce.util import date_to_iso8601
 
 
-DEFAULT_URL = "https://my.salesforce.com/services/data/v52.0/sobjects/{}"
+DEFAULT_URL = f"https://my.salesforce.com/services/data/v{DEFAULT_API_VERSION}/sobjects/{{}}"
 CASE_URL = DEFAULT_URL.format("Case")
 
 

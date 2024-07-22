@@ -12,13 +12,15 @@ include = ["LICENSE.txt"]
 [tool.poetry.dependencies]
 python = "^3.10"
 aiofiles = "<24"
-cryptography = "*"
 httpx = "<1"
-PyJWT = "^2.8"
+pendulum = "^3"
+PyJWT = "<3"
 requests = "<3"
-zeep = "<5"
+zeep = "^4.2.1"
 
 [tool.poetry.group.dev.dependencies]
+black = "^23.7.0"
+cryptography = "*"
 pytest = "^7.4.0"
 pytz = "^2023.3"
 pytest-cov = "^4.1.0"
@@ -27,7 +29,6 @@ pytest-pylint = "^0.19.0"
 pylint = "^2.17.5"
 responses = "^0.23.3"
 twine = "^3.8.0"
-black = "^23.7.0"
 
 [build-system]
 requires = ["poetry-core"]

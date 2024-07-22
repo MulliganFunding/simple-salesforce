@@ -7,6 +7,7 @@ import warnings
 import httpx
 import pytest
 
+from simple_salesforce.api import DEFAULT_API_VERSION
 from simple_salesforce.exceptions import SalesforceAuthenticationFailed
 from simple_salesforce.aio.login import AsyncSalesforceLogin
 
@@ -57,7 +58,7 @@ async def test_custom_domain_success(constants, mock_httpx_client):
     assert len(mock_client.method_calls) == 1
     call = mock_client.method_calls[0]
     assert call[0] == "post"
-    assert call[1][0] == ("https://testdomain.my.salesforce.com/services/Soap/u/52.0")
+    assert call[1][0] == (f"https://testdomain.my.salesforce.com/services/Soap/u/{DEFAULT_API_VERSION}")
     assert "SOAPAction" in call[2]["headers"]
     assert call[2]["headers"]["SOAPAction"] == "login"
 
