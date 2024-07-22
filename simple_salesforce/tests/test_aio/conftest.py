@@ -110,12 +110,19 @@ BULK_HEADERS = {
     "X-PrettyPrint": "1",
 }
 
+BULK2_HEADERS = {
+    "Content-Type": "application/json",
+    "Authorization": f"Bearer {SESSION_ID}",
+    "X-PrettyPrint": "1",
+}
+
 ALL_CONSTANTS = {
     "LOGIN_RESPONSE_SUCCESS": LOGIN_RESPONSE_SUCCESS,
     "TOKEN_LOGIN_RESPONSE_SUCCESS": TOKEN_LOGIN_RESPONSE_SUCCESS,
     "TOKEN_WARNING": TOKEN_WARNING,
     "ORGANIZATION_LIMITS_RESPONSE": ORGANIZATION_LIMITS_RESPONSE,
     "BULK_HEADERS": BULK_HEADERS,
+    "BULK2_HEADERS": BULK2_HEADERS,
     "SESSION_ID": "12345",
     "INSTANCE_URL": "https://na15.salesforce.com",
     "TOKEN_ID": "https://na15.salesforce.com/id/00Di0000000icUB/0DFi00000008UYO",
@@ -134,7 +141,7 @@ def constants():
     return ALL_CONSTANTS
 
 
-@pytest.fixture(autouse=True)
+@pytest.fixture()
 def mock_httpx_client(monkeypatch):
     """
     Build a mock httpx interface to prevent http calls
@@ -144,6 +151,7 @@ def mock_httpx_client(monkeypatch):
     mock_client = mock.MagicMock(httpx.AsyncClient)
     mock_client.__aenter__ = mock.AsyncMock(return_value=mock_client)
     mock_client.__aexit__ = mock.AsyncMock()
+    mock_client.request = mock.AsyncMock()
     mock_client.get = mock.AsyncMock()
     mock_client.post = mock.AsyncMock()
     mock_client.put = mock.AsyncMock()
@@ -151,16 +159,16 @@ def mock_httpx_client(monkeypatch):
 
     mock_httpx.AsyncClient.return_value = mock_client
 
-    def inner(resp):
+    def inner(resp, side_effect=None):
         """
         Allows callers to dynamically set the response value on each method.
         They can also do this with `mock_client` object as well.
         """
-        mock_client.request = mock.AsyncMock(return_value=resp)
-        mock_client.get = mock.AsyncMock(return_value=resp)
-        mock_client.post = mock.AsyncMock(return_value=resp)
-        mock_client.put = mock.AsyncMock(return_value=resp)
-        mock_client.delete = mock.AsyncMock(return_value=resp)
+        mock_client.request = mock.AsyncMock(return_value=resp, side_effect=side_effect)
+        mock_client.get = mock.AsyncMock(return_value=resp, side_effect=side_effect)
+        mock_client.post = mock.AsyncMock(return_value=resp, side_effect=side_effect)
+        mock_client.put = mock.AsyncMock(return_value=resp, side_effect=side_effect)
+        mock_client.delete = mock.AsyncMock(return_value=resp, side_effect=side_effect)
         return mock_client
 
     monkeypatch.setattr(httpx, "AsyncClient", mock_httpx.AsyncClient)

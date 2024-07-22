@@ -2,7 +2,9 @@
 
 Heavily Modified from RestForce 1.0.0
 """
+
 import aiofiles
+import base64
 from datetime import datetime, timedelta, timezone
 from html import escape, unescape
 from json.decoder import JSONDecodeError
@@ -206,6 +208,25 @@ async def AsyncSalesforceLogin(
             domain,
             consumer_key,
             None,
+            proxies,
+            session_factory=session_factory,
+        )
+    elif (
+        consumer_key is not None
+        and consumer_secret is not None
+        and domain is not None
+        and domain not in ("login", "test")
+    ):
+        token_data = {"grant_type": "client_credentials"}
+        authorization = f"{consumer_key}:{consumer_secret}"
+        encoded = base64.b64encode(authorization.encode()).decode()
+        headers = {"Authorization": f"Basic {encoded}"}
+        return await token_login(
+            f"https://{domain}.salesforce.com/services/oauth2/token",
+            token_data,
+            domain,
+            consumer_key,
+            headers,
             proxies,
             session_factory=session_factory,
         )

@@ -315,3 +315,56 @@ async def test_connected_app_login_failure(mock_httpx_client):
     assert call[1][0].startswith(OAUTH_TOKEN_URL)
     assert call[2]["data"]["grant_type"] == "password"
     assert call[2]["data"]["client_id"] == "12345.abcde"
+
+
+
+async def test_connected_app_client_credentials_login_success(constants, mock_httpx_client):
+    """Test a successful connected app login with client credentials"""
+    login_args = {
+        "consumer_key": "12345.abcde",
+        "consumer_secret": "12345.abcde",
+        "domain": "testdomain.my"
+    }
+
+    _, mock_client, inner = mock_httpx_client
+    happy_result = httpx.Response(
+        200, content=constants["TOKEN_LOGIN_RESPONSE_SUCCESS"]
+    )
+    inner(happy_result)
+    (session_id, instance_url) = await AsyncSalesforceLogin(**login_args)
+    assert session_id == constants["SESSION_ID"]
+    assert instance_url == urlparse(constants["INSTANCE_URL"]).netloc
+    assert len(mock_client.method_calls) == 1
+    call = mock_client.method_calls[0]
+    assert call[0] == "post"
+    assert call[1][0].startswith(OAUTH_TOKEN_URL.replace("login", "testdomain.my"))
+    assert call[2]["data"]["grant_type"] == "client_credentials"
+
+
+
+async def test_connected_app_client_credentials_login_failure(mock_httpx_client):
+    """Test a failed connected app login"""
+    _, mock_client, inner = mock_httpx_client
+    fail_result = httpx.Response(
+        400,
+        request=httpx.Request("POST", "login.my.salesforce.com"),
+        content=json.dumps({
+            "error": "invalid_client_id",
+            "error_description": "client identifier invalid"
+        }),
+    )
+    inner(fail_result)
+    login_args = {
+        "consumer_key": "12345.abcde",
+        "consumer_secret": "12345.abcde",
+        "domain": "testdomain.my"
+    }
+    with pytest.raises(SalesforceAuthenticationFailed):
+        await AsyncSalesforceLogin(**login_args)
+
+    assert len(mock_client.method_calls) == 1
+    call = mock_client.method_calls[0]
+
+    assert call[0] == "post"
+    assert call[1][0].startswith(OAUTH_TOKEN_URL.replace("login", "testdomain.my"))
+    assert call[2]["data"]["grant_type"] == "client_credentials"
