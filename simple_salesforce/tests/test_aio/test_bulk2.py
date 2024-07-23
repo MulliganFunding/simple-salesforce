@@ -1,4 +1,5 @@
 """Test for bulk2.py"""
+
 import csv
 import http.client as http
 import json
@@ -18,7 +19,6 @@ from simple_salesforce.bulk2 import JobState, Operation
 # pylint: disable=line-too-long,missing-docstring
 
 to_body = partial(json.dumps, ensure_ascii=False)
-
 
 
 @pytest.fixture
@@ -72,7 +72,6 @@ def test_bulk2_type(sf_client, constants):
     assert "Contact" == contact.object_name
 
 
-
 @pytest.fixture
 def ingest_responses(httpx_mock: HTTPXMock):
     def build_response(operation, processed, failed=0):
@@ -92,7 +91,7 @@ def ingest_responses(httpx_mock: HTTPXMock):
                 "object": "Contact",
                 "operation": operation,
                 "state": JobState.open,
-            }
+            },
         )
         httpx_mock.add_response(
             status_code=http.CREATED,
@@ -114,7 +113,7 @@ def ingest_responses(httpx_mock: HTTPXMock):
                 "object": "Contact",
                 "operation": operation,
                 "state": JobState.upload_complete,
-            }
+            },
         )
         httpx_mock.add_response(
             status_code=http.OK,
@@ -131,7 +130,7 @@ def ingest_responses(httpx_mock: HTTPXMock):
                 "object": "Contact",
                 "operation": operation,
                 "state": JobState.in_progress,
-            }
+            },
         )
         httpx_mock.add_response(
             status_code=http.OK,
@@ -150,16 +149,15 @@ def ingest_responses(httpx_mock: HTTPXMock):
                 "object": "Contact",
                 "operation": operation,
                 "state": JobState.job_complete,
-            }
+            },
         )
+
     return build_response
 
 
 async def ingest_data(sf_client, operation, data, **kwargs):
     """Upload data into Salesforce"""
-    operation = (
-        "hard_delete" if operation == Operation.hard_delete else operation
-    )
+    operation = "hard_delete" if operation == Operation.hard_delete else operation
     with to_csv_file(data) as csv_file:
         handler = getattr(sf_client.bulk2.Contact, operation)
         results = await handler(csv_file, **kwargs)
@@ -222,7 +220,7 @@ async def test_sf_bulk2_type_insert(httpx_mock, sf_client, ingest_responses):
     operation = Operation.insert
     total = len(INSERT_DATA)
     ingest_responses(operation, processed=total, failed=0)
-    results = await ingest_data(sf_client, operation, INSERT_DATA)
+    results = await ingest_data(sf_client, operation, INSERT_DATA, wait=0.1)
     assert EXPECTED_RESULTS == results
 
     httpx_mock.add_response(
@@ -234,17 +232,21 @@ async def test_sf_bulk2_type_insert(httpx_mock, sf_client, ingest_responses):
             "a011s00000DML8XAAX","true","CustomID1","ID-13","contact1@example.com","Bob","x"
             "a011s00000DML8YAAX","true","CustomID2","ID-24","contact2@example.com","Alice","y"
             """
-        )
+        ),
     )
 
     results = await sf_client.bulk2.Contact.get_successful_records("Job-1")
 
-    assert textwrap.dedent("""
+    assert (
+        textwrap.dedent(
+            """
         "sf__Id","sf__Created","Custom_Id__c","AccountId","Email","FirstName","LastName"
         "a011s00000DML8XAAX","true","CustomID1","ID-13","contact1@example.com","Bob","x"
         "a011s00000DML8YAAX","true","CustomID2","ID-24","contact2@example.com","Alice","y"
         """
-    ) == results
+        )
+        == results
+    )
 
 
 async def test_sf_bulk2_type_upsert(httpx_mock, sf_client, ingest_responses):
@@ -253,29 +255,25 @@ async def test_sf_bulk2_type_upsert(httpx_mock, sf_client, ingest_responses):
     total = len(UPSERT_DATA)
     ingest_responses(operation, processed=total, failed=0)
     results = await ingest_data(
-        sf_client, operation, UPSERT_DATA, external_id_field="Custom_Id__c"
+        sf_client, operation, UPSERT_DATA, external_id_field="Custom_Id__c", wait=0.1
     )
     assert EXPECTED_RESULTS == results
+
+    expected_results2 = textwrap.dedent(
+        """
+        "sf__Id","sf__Created","Custom_Id__c","LastName"
+        "a011s00000DML8XAAX","false","CustomID1","X"
+        "a011s00000DML8YAAX","false","CustomID2","Y"
+        """
+    )
     httpx_mock.add_response(
         url=re.compile(r"^https://.*/jobs/ingest/Job-1/successfulResults$"),
         method="GET",
-        text=textwrap.dedent(
-            """
-            "sf__Id","sf__Created","Custom_Id__c","LastName"
-            "a011s00000DML8XAAX","false","CustomID1","X"
-            "a011s00000DML8YAAX","false","CustomID2","Y"
-            """
-        )
+        text=expected_results2,
     )
 
-    results = sf_client.bulk2.Contact.get_successful_records("Job-1")
-    assert textwrap.dedent(
-            """
-                "sf__Id","sf__Created","Custom_Id__c","LastName"
-                "a011s00000DML8XAAX","false","CustomID1","X"
-                "a011s00000DML8YAAX","false","CustomID2","Y"
-            """
-        ) == results
+    results = await sf_client.bulk2.Contact.get_successful_records("Job-1")
+    assert expected_results2 == results
 
 
 async def test_hard_delete(httpx_mock, sf_client, ingest_responses):
@@ -283,7 +281,7 @@ async def test_hard_delete(httpx_mock, sf_client, ingest_responses):
     operation = Operation.hard_delete
     total = len(DELETE_DATA)
     ingest_responses(operation, processed=total, failed=0)
-    results = await ingest_data(sf_client, operation, DELETE_DATA)
+    results = await ingest_data(sf_client, operation, DELETE_DATA, wait=0.1)
     assert EXPECTED_RESULTS == results
 
     httpx_mock.add_response(
@@ -300,13 +298,16 @@ async def test_hard_delete(httpx_mock, sf_client, ingest_responses):
     )
 
     results = await sf_client.bulk2.Contact.get_successful_records("Job-1")
-    assert textwrap.dedent(
+    assert (
+        textwrap.dedent(
             """
             "sf__Id","sf__Created","Id"
             "a011s00000DTU9zAAH","false","a011s00000DTU9zAAH"
             "a011s00000DTUA0AAP","false","a011s00000DTUA0AAP"
             """
-        ) == results
+        )
+        == results
+    )
 
 
 async def test_query(httpx_mock, sf_client):
@@ -372,9 +373,7 @@ async def test_query(httpx_mock, sf_client):
     )
     httpx_mock.add_response(
         method="GET",
-        url=re.compile(
-            r"^https://.*/jobs/query/Job-1/results\?maxRecords=\d+$"
-        ),
+        url=re.compile(r"^https://.*/jobs/query/Job-1/results\?maxRecords=\d+$"),
         text=textwrap.dedent(
             """
             "Id","AccountId","Email","FirstName","LastName"
@@ -407,16 +406,15 @@ async def test_get_failed_record_results(httpx_mock, sf_client, ingest_responses
         processed=total,
         failed=total,
     )
-    results = await ingest_data(sf_client, operation, INSERT_DATA)
+    results = await ingest_data(sf_client, operation, INSERT_DATA, wait=0.1)
     assert [
-            {
-                "numberRecordsFailed": total,
-                "numberRecordsProcessed": total,
-                "numberRecordsTotal": total,
-                "job_id": "Job-1",
-            }
-        ] == results
-
+        {
+            "numberRecordsFailed": total,
+            "numberRecordsProcessed": total,
+            "numberRecordsTotal": total,
+            "job_id": "Job-1",
+        }
+    ] == results
 
     def make_responses():
         httpx_mock.add_response(
@@ -461,27 +459,25 @@ async def test_get_unprocessed_record_results(httpx_mock, sf_client, ingest_resp
         processed=total - 1,
         failed=0,
     )
-    results = await ingest_data(sf_client, operation, INSERT_DATA)
+    results = await ingest_data(sf_client, operation, INSERT_DATA, wait=0.1)
     assert [
-            {
-                "numberRecordsFailed": 0,
-                "numberRecordsProcessed": total - 1,
-                "numberRecordsTotal": total,
-                "job_id": "Job-1",
-            }
-        ] == results
+        {
+            "numberRecordsFailed": 0,
+            "numberRecordsProcessed": total - 1,
+            "numberRecordsTotal": total,
+            "job_id": "Job-1",
+        }
+    ] == results
 
     def make_responses():
         httpx_mock.add_response(
             method="GET",
-            url=re.compile(
-                r"^https://.*/jobs/ingest/Job-1/unprocessedRecords$"
-            ),
+            url=re.compile(r"^https://.*/jobs/ingest/Job-1/unprocessedRecords$"),
             text=textwrap.dedent(
                 """
-                    "Custom_Id__c","AccountId","Email","FirstName","LastName"
-                    "CustomID2","ID-24","contact2@example.com","Alice","y"
-                    """
+                "Custom_Id__c","AccountId","Email","FirstName","LastName"
+                "CustomID2","ID-24","contact2@example.com","Alice","y"
+                """
             ),
             status_code=http.OK,
         )

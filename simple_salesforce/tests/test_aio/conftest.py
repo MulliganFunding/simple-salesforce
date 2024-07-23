@@ -1,9 +1,9 @@
 """
 Common fixtures for tests in this directory
 """
+import re
 from unittest import mock
 
-import httpx
 import pytest
 
 from simple_salesforce.aio import AsyncSalesforce
@@ -159,3 +159,55 @@ def sf_client(constants):
     client.apex_url = "https://localhost/apexrest/"
     client.tooling_url = "https://localhost/tooling/"
     return client
+
+
+TEST_DOMAIN = "https://testdomain.my.salesforce.com"
+SOAP_URL = "https://login.salesforce.com/services/Soap/u/"
+OAUTH_TOKEN_URL = "https://login.salesforce.com/services/oauth2/token"
+
+# Regex patterns for matching URLs
+OATH_TOKEN_URL_PAT = re.compile(r"https://login\.salesforce\.com/services/oauth2/token/?.*")
+SOAP_URL_PAT = re.compile(r"https://login\.salesforce\.com/services/Soap/u/?.*")
+TEST_DOMAIN_PAT = re.compile(r"https://testdomain\.my.*")
+
+@pytest.fixture()
+def urls():
+    return {
+        "soap_url": SOAP_URL,
+        "oauth_token_url": OAUTH_TOKEN_URL,
+        "soap_url_pat": SOAP_URL_PAT,
+        "oauth_token_url_pat": OATH_TOKEN_URL_PAT,
+        "test_domain": TEST_DOMAIN,
+        "test_domain_pat": TEST_DOMAIN_PAT,
+    }
+
+
+@pytest.fixture()
+def test_domain():
+    return TEST_DOMAIN
+
+
+@pytest.fixture()
+def soap_login_url():
+    return SOAP_URL
+
+
+@pytest.fixture()
+def oauth_token_url():
+    return OAUTH_TOKEN_URL
+
+
+@pytest.fixture()
+def soap_url_pat():
+    return SOAP_URL_PAT
+
+
+@pytest.fixture()
+def oauth_token_url_pat():
+    return OATH_TOKEN_URL_PAT
+
+
+@pytest.fixture()
+def test_domain_pat():
+    return TEST_DOMAIN_PAT
+

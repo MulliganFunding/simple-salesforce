@@ -26,8 +26,6 @@ DEFAULT_URL = (
     f"https://my.salesforce.com/services/data/v{DEFAULT_API_VERSION}/sobjects/{{}}"
 )
 CASE_URL = DEFAULT_URL.format("Case")
-SOAP_URL = "https://login.salesforce.com/services/Soap/u/"
-OAUTH_TOKEN_URL = "https://login.salesforce.com/services/oauth2/token"
 
 
 # # # # # # # # # # # # # # # # # # # # # #
@@ -48,13 +46,13 @@ async def test_build_fail():
         )
 
 
-async def test_build_async_with_session_success(constants, httpx_mock: HTTPXMock):
+async def test_build_async_with_session_success(urls, constants, httpx_mock: HTTPXMock):
     """
     Test the builder function and pass a custom session
     """
     httpx_mock.add_response(
         status_code=200,
-        url=re.compile(SOAP_URL + ".*"),
+        url=urls["soap_url_pat"],
         text=constants["LOGIN_RESPONSE_SUCCESS"],
     )
     client = await build_async_salesforce_client(
@@ -70,18 +68,18 @@ async def test_build_async_with_session_success(constants, httpx_mock: HTTPXMock
     assert len(requests) == 1
 
     assert requests[0].method == "POST"
-    assert str(requests[0].url).startswith(SOAP_URL)
+    assert str(requests[0].url).startswith(urls["soap_url"])
     assert "SOAPAction" in requests[0].headers
     assert requests[0].headers["SOAPAction"] == "login"
 
 
-async def test_build_async_with_org_id(constants, httpx_mock: HTTPXMock):
+async def test_build_async_with_org_id(urls, constants, httpx_mock: HTTPXMock):
     """
     Test the builder function and pass a custom session
     """
     httpx_mock.add_response(
         status_code=200,
-        url=re.compile(SOAP_URL + ".*"),
+        url=urls["soap_url_pat"],
         text=constants["LOGIN_RESPONSE_SUCCESS"],
     )
 
@@ -98,7 +96,7 @@ async def test_build_async_with_org_id(constants, httpx_mock: HTTPXMock):
     assert len(requests) == 1
 
     assert requests[0].method == "POST"
-    assert str(requests[0].url).startswith(SOAP_URL)
+    assert str(requests[0].url).startswith(urls["soap_url"])
     assert "SOAPAction" in requests[0].headers
     assert requests[0].headers["SOAPAction"] == "login"
 
@@ -121,13 +119,13 @@ async def test_build_async_with_direct(httpx_mock: HTTPXMock):
     assert len(requests) == 0
 
 
-async def test_build_async_with_jwt(httpx_mock: HTTPXMock):
+async def test_build_async_with_jwt(urls, httpx_mock: HTTPXMock):
     """
     Test the builder function and pass a custom session
     """
     content = {"access_token": "this is a token", "instance_url": "http://bla"}
     httpx_mock.add_response(
-        status_code=200, url=re.compile(OAUTH_TOKEN_URL + ".*"), json=content
+        status_code=200, url=urls["oauth_token_url_pat"], json=content
     )
 
     private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
@@ -150,7 +148,7 @@ async def test_build_async_with_jwt(httpx_mock: HTTPXMock):
     assert len(requests) == 1
 
     assert requests[0].method == "POST"
-    assert str(requests[0].url).startswith(OAUTH_TOKEN_URL)
+    assert str(requests[0].url).startswith(urls["oauth_token_url"])
 
 
 # # # # # # # # # # # # # # # # # # # # # #

@@ -14,16 +14,14 @@ from simple_salesforce.aio.login import AsyncSalesforceLogin
 
 
 PARENT_DIR = os.path.dirname(os.path.dirname(__file__))
-SOAP_URL = "https://login.salesforce.com/services/Soap/u/"
-OAUTH_TOKEN_URL = "https://login.salesforce.com/services/oauth2/token"
 
 
-async def test_default_domain_success(constants, httpx_mock: HTTPXMock):
+async def test_default_domain_success(constants, urls, httpx_mock: HTTPXMock):
     """Test login for default domain"""
 
     httpx_mock.add_response(
         status_code=200,
-        url=re.compile(SOAP_URL + ".*"),
+        url=urls["soap_url_pat"],
         text=constants["LOGIN_RESPONSE_SUCCESS"],
     )
 
@@ -38,7 +36,7 @@ async def test_default_domain_success(constants, httpx_mock: HTTPXMock):
     assert len(requests) == 1
 
     assert requests[0].method == "POST"
-    assert str(requests[0].url).startswith(SOAP_URL)
+    assert str(requests[0].url).startswith(urls["soap_url"])
     assert "SOAPAction" in requests[0].headers
     assert requests[0].headers["SOAPAction"] == "login"
 
@@ -70,7 +68,7 @@ async def test_custom_domain_success(constants, httpx_mock: HTTPXMock):
     assert requests[0].headers["SOAPAction"] == "login"
 
 
-async def test_custom_domain_soap_failure(httpx_mock: HTTPXMock):
+async def test_custom_domain_soap_failure(urls, httpx_mock: HTTPXMock):
     """Test login for custom domain"""
     fail_result = (
         '<?xml version="1.0" encoding="UTF-8"?><soapenv:Envelope '
@@ -88,7 +86,7 @@ async def test_custom_domain_soap_failure(httpx_mock: HTTPXMock):
     )
 
     httpx_mock.add_response(
-        status_code=500, url=re.compile(SOAP_URL + ".*"), text=fail_result
+        status_code=500, url=urls["soap_url_pat"], text=fail_result
     )
 
     with pytest.raises(SalesforceAuthenticationFailed):
@@ -101,7 +99,7 @@ async def test_custom_domain_soap_failure(httpx_mock: HTTPXMock):
     assert len(requests) == 1
 
     assert requests[0].method == "POST"
-    assert str(requests[0].url).startswith(SOAP_URL)
+    assert str(requests[0].url).startswith(urls["soap_url"])
     assert "SOAPAction" in requests[0].headers
     assert requests[0].headers["SOAPAction"] == "login"
 
@@ -120,12 +118,12 @@ def sample_key(sample_key_filepath):
 
 
 async def test_token_login_success_with_key_file(
-    sample_key_filepath, constants, httpx_mock: HTTPXMock
+    sample_key_filepath, urls, constants, httpx_mock: HTTPXMock
 ):
     """Test a successful JWT Token login with a key file"""
     httpx_mock.add_response(
         status_code=200,
-        url=re.compile(OAUTH_TOKEN_URL + ".*"),
+        url=urls["oauth_token_url_pat"],
         text=constants["TOKEN_LOGIN_RESPONSE_SUCCESS"],
     )
 
@@ -141,7 +139,7 @@ async def test_token_login_success_with_key_file(
     assert len(requests) == 1
 
     assert requests[0].method == "POST"
-    assert str(requests[0].url).startswith(OAUTH_TOKEN_URL)
+    assert str(requests[0].url).startswith(urls["oauth_token_url"])
     parsed_data = parse_qs(requests[0].content)
 
     assert parsed_data[b"grant_type"] == (
@@ -150,12 +148,12 @@ async def test_token_login_success_with_key_file(
 
 
 async def test_token_login_success_with_key_string(
-    sample_key, constants, httpx_mock: HTTPXMock
+    sample_key, urls, constants, httpx_mock: HTTPXMock
 ):
     """Test a successful JWT Token login with a private key"""
     httpx_mock.add_response(
         status_code=200,
-        url=re.compile(OAUTH_TOKEN_URL + ".*"),
+        url=urls["oauth_token_url_pat"],
         text=constants["TOKEN_LOGIN_RESPONSE_SUCCESS"],
     )
 
@@ -172,7 +170,7 @@ async def test_token_login_success_with_key_string(
     assert len(requests) == 1
 
     assert requests[0].method == "POST"
-    assert str(requests[0].url).startswith(OAUTH_TOKEN_URL)
+    assert str(requests[0].url).startswith(urls["oauth_token_url"])
     parsed_data = parse_qs(requests[0].content)
 
     assert parsed_data[b"grant_type"] == (
@@ -181,12 +179,12 @@ async def test_token_login_success_with_key_string(
 
 
 async def test_token_login_success_with_key_bytes(
-    sample_key, constants, httpx_mock: HTTPXMock
+    sample_key, urls, constants, httpx_mock: HTTPXMock
 ):
     """Test a successful JWT Token login with a private key"""
     httpx_mock.add_response(
         status_code=200,
-        url=re.compile(OAUTH_TOKEN_URL + ".*"),
+        url=urls["oauth_token_url_pat"],
         text=constants["TOKEN_LOGIN_RESPONSE_SUCCESS"],
     )
 
@@ -202,7 +200,7 @@ async def test_token_login_success_with_key_bytes(
     assert len(requests) == 1
 
     assert requests[0].method == "POST"
-    assert str(requests[0].url).startswith(OAUTH_TOKEN_URL)
+    assert str(requests[0].url).startswith(urls["oauth_token_url"])
     parsed_data = parse_qs(requests[0].content)
 
     assert parsed_data[b"grant_type"] == (
@@ -210,11 +208,11 @@ async def test_token_login_success_with_key_bytes(
     )
 
 
-async def test_token_login_failure(httpx_mock: HTTPXMock, sample_key_filepath):
+async def test_token_login_failure(urls, httpx_mock: HTTPXMock, sample_key_filepath):
     """Test login for custom domain"""
     httpx_mock.add_response(
         status_code=400,
-        url=re.compile(OAUTH_TOKEN_URL + ".*"),
+        url=urls["oauth_token_url_pat"],
         json={
             "error": "invalid_client_id",
             "error_description": "client identifier invalid",
@@ -231,7 +229,7 @@ async def test_token_login_failure(httpx_mock: HTTPXMock, sample_key_filepath):
     assert len(requests) == 1
 
     assert requests[0].method == "POST"
-    assert str(requests[0].url).startswith(OAUTH_TOKEN_URL)
+    assert str(requests[0].url).startswith(urls["oauth_token_url"])
     parsed_data = parse_qs(requests[0].content)
 
     assert parsed_data[b"grant_type"] == (
@@ -240,12 +238,12 @@ async def test_token_login_failure(httpx_mock: HTTPXMock, sample_key_filepath):
 
 
 async def test_token_login_failure_with_warning(
-    httpx_mock: HTTPXMock, constants, sample_key_filepath
+    urls, httpx_mock: HTTPXMock, constants, sample_key_filepath
 ):
     """Test login failure with warning"""
     httpx_mock.add_response(
         status_code=400,
-        url=re.compile(OAUTH_TOKEN_URL + ".*"),
+        url=urls["oauth_token_url_pat"],
         json={
             "error": "invalid_grant",
             "error_description": "user hasn't approved this consumer",
@@ -263,7 +261,7 @@ async def test_token_login_failure_with_warning(
     assert len(requests) == 1
 
     assert requests[0].method == "POST"
-    assert str(requests[0].url).startswith(OAUTH_TOKEN_URL)
+    assert str(requests[0].url).startswith(urls["oauth_token_url"])
     parsed_data = parse_qs(requests[0].content)
 
     assert parsed_data[b"grant_type"] == (
@@ -275,12 +273,12 @@ async def test_token_login_failure_with_warning(
     assert str(warning[-1].message) == constants["TOKEN_WARNING"]
 
 
-async def test_connected_app_login_success(constants, httpx_mock: HTTPXMock):
+async def test_connected_app_login_success(constants, urls, httpx_mock: HTTPXMock):
     """Test a successful connected app login with a key file"""
 
     httpx_mock.add_response(
         status_code=200,
-        url=re.compile(OAUTH_TOKEN_URL + ".*"),
+        url=urls["oauth_token_url_pat"],
         text=constants["TOKEN_LOGIN_RESPONSE_SUCCESS"],
     )
 
@@ -296,17 +294,17 @@ async def test_connected_app_login_success(constants, httpx_mock: HTTPXMock):
     assert len(requests) == 1
 
     assert requests[0].method == "POST"
-    assert str(requests[0].url).startswith(OAUTH_TOKEN_URL)
+    assert str(requests[0].url).startswith(urls["oauth_token_url"])
     parsed_data = parse_qs(requests[0].content)
 
     assert parsed_data[b"grant_type"] == [b"password"]
 
 
-async def test_connected_app_login_failure(httpx_mock: HTTPXMock):
+async def test_connected_app_login_failure(urls, httpx_mock: HTTPXMock):
     """Test a failed connected app login"""
     httpx_mock.add_response(
         status_code=400,
-        url=re.compile(OAUTH_TOKEN_URL + ".*"),
+        url=urls["oauth_token_url_pat"],
         json={
             "error": "invalid_grant",
             "error_description": "client identifier invalid",
@@ -324,14 +322,14 @@ async def test_connected_app_login_failure(httpx_mock: HTTPXMock):
     assert len(requests) == 1
 
     assert requests[0].method == "POST"
-    assert str(requests[0].url).startswith(OAUTH_TOKEN_URL)
+    assert str(requests[0].url).startswith(urls["oauth_token_url"])
     parsed_data = parse_qs(requests[0].content)
 
     assert parsed_data[b"grant_type"] == [b"password"]
     assert parsed_data[b"client_id"] == [b"12345.abcde"]
 
 
-async def test_connected_app_client_credentials_login_success(constants, httpx_mock: HTTPXMock):
+async def test_connected_app_client_credentials_login_success(urls, constants, httpx_mock: HTTPXMock):
     """Test a successful connected app login with client credentials"""
     login_args = {
         "consumer_key": "12345.abcde",
@@ -341,7 +339,7 @@ async def test_connected_app_client_credentials_login_success(constants, httpx_m
 
     httpx_mock.add_response(
         status_code=200,
-        url=re.compile(r"https://testdomain.my.*" + ".*"),
+        url=urls["test_domain_pat"],
         text=constants["TOKEN_LOGIN_RESPONSE_SUCCESS"],
     )
     (session_id, instance_url) = await AsyncSalesforceLogin(**login_args)
@@ -351,18 +349,18 @@ async def test_connected_app_client_credentials_login_success(constants, httpx_m
     requests = httpx_mock.get_requests()
     assert len(requests) == 1
 
-    assert str(requests[0].url).startswith(OAUTH_TOKEN_URL.replace("login", "testdomain.my"))
+    assert str(requests[0].url).startswith(urls["test_domain"])
     parsed_data = parse_qs(requests[0].content)
 
     assert parsed_data[b"grant_type"] == [b"client_credentials"]
 
 
-async def test_connected_app_client_credentials_login_failure(httpx_mock: HTTPXMock):
+async def test_connected_app_client_credentials_login_failure(urls, httpx_mock: HTTPXMock):
     """Test a failed connected app login"""
 
     httpx_mock.add_response(
         status_code=400,
-        url=re.compile(r"https://testdomain.my.*" + ".*"),
+        url=urls["test_domain_pat"],
         json={
             "error": "invalid_grant",
             "error_description": "client identifier invalid",
@@ -380,7 +378,7 @@ async def test_connected_app_client_credentials_login_failure(httpx_mock: HTTPXM
     requests = httpx_mock.get_requests()
     assert len(requests) == 1
 
-    assert str(requests[0].url).startswith(OAUTH_TOKEN_URL.replace("login", "testdomain.my"))
+    assert str(requests[0].url).startswith(urls["test_domain"])
     parsed_data = parse_qs(requests[0].content)
 
     assert parsed_data[b"grant_type"] == [b"client_credentials"]

@@ -1,4 +1,5 @@
 """ Classes for interacting with Salesforce Bulk 2.0 API """
+
 import asyncio
 import copy
 import csv
@@ -8,9 +9,7 @@ import json
 import os
 import re
 import sys
-import tempfile
 from collections import OrderedDict
-from contextlib import aclosing
 from typing import Dict, Tuple, Union, List
 
 import aiofiles
@@ -100,7 +99,9 @@ async def _split_csv(filename=None, records=None, max_records: int = None):
             yield records_size, header + "".join(buff)
 
 
-async def _count_csv(filename=None, data=None, skip_header=False, line_ending=LineEnding.LF):
+async def _count_csv(
+    filename=None, data=None, skip_header=False, line_ending=LineEnding.LF
+):
     """Count the number of records in a CSV file."""
     if filename:
         count = 0
@@ -143,7 +144,7 @@ class AsyncSFBulk2Handler:
     to allow the above syntax
     """
 
-    def __init__(self, session_id, bulk2_url,  proxies, session_factory):
+    def __init__(self, session_id, bulk2_url, proxies, session_factory):
         """Initialize the instance with the given parameters.
 
         Arguments:
@@ -313,7 +314,10 @@ class _AsyncBulk2Client:
         url = self._construct_request_url(job_id, is_query)
         headers = self._get_headers()
         result = await call_salesforce(
-            url=url, method="DELETE", session_factory=self.session_factory, headers=headers
+            url=url,
+            method="DELETE",
+            session_factory=self.session_factory,
+            headers=headers,
         )
         return result.json(object_pairs_hook=OrderedDict)
 
@@ -336,7 +340,10 @@ class _AsyncBulk2Client:
         url = self._construct_request_url(job_id, is_query)
 
         result = await call_salesforce(
-            url=url, method="GET", session_factory=self.session_factory, headers=self._get_headers()
+            url=url,
+            method="GET",
+            session_factory=self.session_factory,
+            headers=self._get_headers(),
         )
         return result.json(object_pairs_hook=OrderedDict)
 
@@ -394,16 +401,15 @@ class _AsyncBulk2Client:
             params["locator"] = locator
         headers = self._get_headers(self.JSON_CONTENT_TYPE, self.CSV_CONTENT_TYPE)
         # Close connection without contextlib
-        async with aclosing(
-            await call_salesforce(
-                url=url,
-                method="GET",
-                session_factory=self.session_factory,
-                headers=headers,
-                params=params,
-                stream=True,
-            )
-        ) as result, tempfile.NamedTemporaryFile(
+        result = await call_salesforce(
+            url=url,
+            method="GET",
+            session_factory=self.session_factory,
+            headers=headers,
+            params=params,
+            stream=True,
+        )
+        async with aiofiles.tempfile.NamedTemporaryFile(
             "wb", dir=path, suffix=".csv", delete=False
         ) as bos:
             locator = result.headers.get("Sforce-Locator", "")
@@ -411,7 +417,8 @@ class _AsyncBulk2Client:
                 locator = ""
             number_of_records = int(result.headers.get("Sforce-NumberOfRecords"))
             for chunk in result.iter_content(chunk_size=chunk_size):
-                bos.write(self.filter_null_bytes(chunk))
+                await bos.write(self.filter_null_bytes(chunk))
+
             # check the file exists
             if os.path.isfile(bos.name):
                 return {
@@ -461,17 +468,19 @@ class _AsyncBulk2Client:
         )
         return result.text
 
-    async def download_ingest_results(self, file, job_id, results_type, chunk_size=1024):
+    async def download_ingest_results(
+        self, file, job_id, results_type, chunk_size=1024
+    ):
         """Download record results to a file"""
         url = self._construct_request_url(job_id, False) + "/" + results_type
         headers = self._get_headers(self.JSON_CONTENT_TYPE, self.CSV_CONTENT_TYPE)
-        async with aclosing(
-            await call_salesforce(
-                url=url, method="GET", session_factory=self.session_factory, headers=headers
-            )
-        ) as result, open(file, "wb") as bos:
-            for chunk in result.iter_content(chunk_size=chunk_size):
-                bos.write(self.filter_null_bytes(chunk))
+        result = await call_salesforce(
+            url=url, method="GET", session_factory=self.session_factory, headers=headers
+        )
+
+        async with aiofiles.open(file, "wb") as bos:
+            for data in result.iter_bytes(chunk_size=chunk_size):
+                await bos.write(self.filter_null_bytes(data))
 
         if not os.path.exists(file):
             raise SalesforceBulkV2LoadError(
@@ -500,7 +509,9 @@ class AsyncSFBulk2Type:
         self.bulk2_url = bulk2_url
         self.session_factory = session_factory
         self.headers = headers
-        self._client = _AsyncBulk2Client(object_name, bulk2_url, headers, session_factory)
+        self._client = _AsyncBulk2Client(
+            object_name, bulk2_url, headers, session_factory
+        )
 
     async def _upload_data(
         self,
@@ -515,7 +526,9 @@ class AsyncSFBulk2Type:
         if len(data) == 2:
             total, data = data
         else:
-            total = await _count_csv(data=data, line_ending=line_ending, skip_header=True)
+            total = await _count_csv(
+                data=data, line_ending=line_ending, skip_header=True
+            )
         res = await self._client.create_job(
             operation,
             column_delimiter=column_delimiter,
@@ -592,14 +605,16 @@ class AsyncSFBulk2Type:
 
         futures = []
         async for data in split_data:
-            futures.append(self._upload_data(
-                operation,
-                data,
-                column_delimiter,
-                line_ending,
-                external_id_field,
-                wait,
-            ))
+            futures.append(
+                self._upload_data(
+                    operation,
+                    data,
+                    column_delimiter,
+                    line_ending,
+                    external_id_field,
+                    wait,
+                )
+            )
         results = await asyncio.gather(*futures)
         return results
 
@@ -794,7 +809,9 @@ class AsyncSFBulk2Type:
         while locator:
             if locator == "INIT":
                 locator = ""
-            result = await self._client.download_job_data(path, job_id, locator, max_records)
+            result = await self._client.download_job_data(
+                path, job_id, locator, max_records
+            )
             locator = result["locator"]
             results.append(result)
         return results
@@ -822,7 +839,9 @@ class AsyncSFBulk2Type:
         Results Property:
             Fields from the original CSV request data:	[various]
         """
-        return await self._retrieve_ingest_records(job_id, ResultsType.unprocessed, file)
+        return await self._retrieve_ingest_records(
+            job_id, ResultsType.unprocessed, file
+        )
 
     async def get_successful_records(self, job_id, file=None):
         """Get successful record results.
@@ -846,7 +865,7 @@ class AsyncSFBulk2Type:
         successful, failed, unprocessed = await asyncio.gather(
             self.get_successful_records(job_id=job_id, file=file).splitlines(),
             self.get_failed_records(job_id=job_id, file=file).splitlines(),
-            self.get_unprocessed_records(job_id=job_id, file=file).splitlines()
+            self.get_unprocessed_records(job_id=job_id, file=file).splitlines(),
         )
         successful_records = csv.DictReader(
             successful,
