@@ -425,8 +425,9 @@ class _AsyncBulk2Client:
         if not data:
             raise SalesforceBulkV2LoadError("Data is required for ingest jobs")
 
+        data_bytes = data.encode("utf-8")
         # performance reduction here
-        data_size = len(data.encode("utf-8"))
+        data_size = len(data_bytes)
         if data_size > MAX_INGEST_JOB_FILE_SIZE:
             raise SalesforceBulkV2LoadError(
                 f"Data size {data_size} exceeds the max file size accepted by "
@@ -440,7 +441,7 @@ class _AsyncBulk2Client:
             method="PUT",
             session_factory=self.session_factory,
             headers=headers,
-            data=data,
+            content=data_bytes,
         )
         if result.status_code != http.CREATED:
             raise SalesforceBulkV2LoadError(
