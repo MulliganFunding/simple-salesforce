@@ -4,15 +4,16 @@ import asyncio
 import copy
 import csv
 import http.client as http
-import io
 import json
 import os
+from pathlib import Path
 import re
 import sys
 from collections import OrderedDict
 from typing import Dict, Tuple, Union, List
 
 import aiofiles
+import httpx
 import math
 import pendulum
 from pendulum import DateTime
@@ -28,6 +29,7 @@ from simple_salesforce.bulk2 import (
     ColumnDelimiter,
     LineEnding,
     ResultsType,
+    _convert_dict_to_csv, # Dedupe from upstream
     _delimiter_char,  # Dedupe from upstream
     _line_ending_char,  # Dedupe from upstream
     MAX_INGEST_JOB_FILE_SIZE,
@@ -117,23 +119,6 @@ async def _count_csv(
     if skip_header:
         count -= 1
     return count
-
-
-def _convert_dict_to_csv(data, column_delimiter=",", line_ending=LineEnding.LF) -> str:
-    """Converts list of dicts to CSV like object."""
-    if data:
-        keys = set(i for s in [d.keys() for d in data] for i in s)
-        dict_to_csv_file = io.StringIO()
-        writer = csv.DictWriter(
-            dict_to_csv_file,
-            fieldnames=keys,
-            delimiter=column_delimiter,
-            lineterminator=line_ending,
-        )
-        writer.writeheader()
-        for row in data:
-            writer.writerow(row)
-    return dict_to_csv_file.getvalue() if data else None
 
 
 class AsyncSFBulk2Handler:
@@ -376,7 +361,7 @@ class _AsyncBulk2Client:
         locator = result.headers.get("Sforce-Locator", "")
         if locator == "null":
             locator = ""
-        number_of_records = int(result.headers.get("Sforce-NumberOfRecords"))
+        number_of_records = int(result.headers.get("Sforce-NumberOfRecords", 0))
         return {
             "locator": locator,
             "number_of_records": number_of_records,
@@ -385,7 +370,7 @@ class _AsyncBulk2Client:
 
     async def download_job_data(
         self,
-        path,
+        path: str | Path,
         job_id,
         locator: str = "",
         max_records=DEFAULT_QUERY_PAGE_SIZE,
@@ -400,31 +385,35 @@ class _AsyncBulk2Client:
         if locator and locator != "null":
             params["locator"] = locator
         headers = self._get_headers(self.JSON_CONTENT_TYPE, self.CSV_CONTENT_TYPE)
-        # Close connection without contextlib
-        result = await call_salesforce(
-            url=url,
-            method="GET",
-            session_factory=self.session_factory,
-            headers=headers,
-            params=params,
-            stream=True,
-        )
-        async with aiofiles.tempfile.NamedTemporaryFile(
-            "wb", dir=path, suffix=".csv", delete=False
-        ) as bos:
-            locator = result.headers.get("Sforce-Locator", "")
-            if locator == "null":
-                locator = ""
-            number_of_records = int(result.headers.get("Sforce-NumberOfRecords"))
-            for chunk in result.iter_content(chunk_size=chunk_size):
-                await bos.write(self.filter_null_bytes(chunk))
 
-            # check the file exists
-            if os.path.isfile(bos.name):
+        # Pull results: because we are streaming, we need to use a session
+        if self.session_factory:
+            client = self.session_factory()
+        else:
+            client = httpx.AsyncClient()
+
+        ts = pendulum.now("UTC").format("YYYYMMDDHHmmss")
+        temp_fname = os.path.join(path, f"{job_id}-{ts}.csv")
+
+        async with aiofiles.open(temp_fname, "wb") as bos:
+            async with client.stream(
+                "GET", url, headers=headers, params=params
+            ) as response:
+                locator = response.headers.get("Sforce-Locator", "")
+                if locator == "null":
+                    locator = ""
+                number_of_records = int(
+                    response.headers.get("Sforce-NumberOfRecords", 0)
+                )
+                async for chunk in response.aiter_bytes(chunk_size=chunk_size):
+                    await bos.write(self.filter_null_bytes(chunk))
+
+            # check the file exists (taken from sync lib: why do we have this in here?)
+            if os.path.isfile(temp_fname):
                 return {
                     "locator": locator,
                     "number_of_records": number_of_records,
-                    "file": bos.name,
+                    "file": temp_fname,
                 }
             raise SalesforceBulkV2LoadError(
                 f"The IO/Error occured while verifying binary data. "
@@ -777,8 +766,8 @@ class AsyncSFBulk2Type:
 
     async def download(
         self,
-        query,
-        path,
+        query: str,
+        path: str | Path,
         max_records=DEFAULT_QUERY_PAGE_SIZE,
         column_delimiter=ColumnDelimiter.COMMA,
         line_ending=LineEnding.LF,
@@ -863,22 +852,22 @@ class AsyncSFBulk2Type:
             Fields: [various] Fields from the original CSV request data
         """
         successful, failed, unprocessed = await asyncio.gather(
-            self.get_successful_records(job_id=job_id, file=file).splitlines(),
-            self.get_failed_records(job_id=job_id, file=file).splitlines(),
-            self.get_unprocessed_records(job_id=job_id, file=file).splitlines(),
+            self.get_successful_records(job_id=job_id, file=file),
+            self.get_failed_records(job_id=job_id, file=file),
+            self.get_unprocessed_records(job_id=job_id, file=file),
         )
         successful_records = csv.DictReader(
-            successful,
+            successful.splitlines(),
             delimiter=",",
             lineterminator="\n",
         )
         failed_records = csv.DictReader(
-            failed,
+            failed.splitlines(),
             delimiter=",",
             lineterminator="\n",
         )
         unprocessed_records = csv.DictReader(
-            unprocessed,
+            unprocessed.splitlines(),
             delimiter=",",
             lineterminator="\n",
         )

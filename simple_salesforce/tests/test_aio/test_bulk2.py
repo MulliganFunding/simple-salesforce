@@ -499,3 +499,175 @@ async def test_get_unprocessed_record_results(httpx_mock, sf_client, ingest_resp
         async with aiofiles.open(csv_file, "r", encoding="utf-8") as bis:
             content = await bis.read()
             assert expected_results == content
+
+
+async def test_download(httpx_mock, sf_client, tmpdir):
+    """Test bulk2 download query records"""
+    operation = Operation.query
+    httpx_mock.add_response(
+        method="POST",
+        url=re.compile(r"^https://.*/jobs/query$"),
+        text=to_body(
+            {
+                "apiVersion": 52.0,
+                "columnDelimiter": "COMMA",
+                "concurrencyMode": "Parallel",
+                "contentType": "CSV",
+                "id": "Job-1",
+                "lineEnding": "LF",
+                "object": "Contact",
+                "operation": operation,
+                "state": JobState.upload_complete,
+            }
+        ),
+        status_code=http.OK,
+    )
+    httpx_mock.add_response(
+        method="GET",
+        url=re.compile(r"^https://.*/jobs/query/Job-1$"),
+        text=to_body(
+            {
+                "apiVersion": 52.0,
+                "columnDelimiter": "COMMA",
+                "concurrencyMode": "Parallel",
+                "contentType": "CSV",
+                "id": "Job-1",
+                "jobType": "V2Query",
+                "lineEnding": "LF",
+                "numberRecordsProcessed": 4,
+                "object": "Contact",
+                "operation": operation,
+                "state": JobState.in_progress,
+            }
+        ),
+        status_code=http.OK,
+    )
+    httpx_mock.add_response(
+        method="GET",
+        url=re.compile(r"^https://.*/jobs/query/Job-1$"),
+        text=to_body(
+            {
+                "apiVersion": 52.0,
+                "columnDelimiter": "COMMA",
+                "concurrencyMode": "Parallel",
+                "contentType": "CSV",
+                "id": "Job-1",
+                "jobType": "V2Query",
+                "lineEnding": "LF",
+                "numberRecordsProcessed": 4,
+                "object": "Contact",
+                "operation": operation,
+                "state": JobState.job_complete,
+            }
+        ),
+        status_code=http.OK,
+    )
+    httpx_mock.add_response(
+        method="GET",
+        url=re.compile(r"^https://.*/jobs/query/Job-1/results\?maxRecords=\d+$"),
+        text=textwrap.dedent(
+            """
+            "Id","AccountId","Email","FirstName","LastName"
+            "001xx000003DHP0AAO","ID-13","contact1@example.com","Bob","x"
+            "001xx000003DHP1AAO","ID-24","contact2@example.com","Alice","y"
+            "001xx000003DHP0AAO","ID-13","contact1@example.com","Bob","x"
+            "001xx000003DHP1AAO","ID-24","contact2@example.com","Alice","y"
+            """
+        ),
+        headers={
+            "Sforce-NumberOfRecords": "4",
+            "Sforce-Query-Locator": "",
+        },
+        status_code=http.OK,
+    )
+
+    query = "SELECT Id,AccountId,Email,FirstName,LastName FROM Contact"
+    path = tmpdir.mkdir("test-download-bulk2")
+
+    all_results = await sf_client.bulk2.Contact.download(
+        query, path, max_records=1, wait=0.1
+    )
+
+    # Validate results from function
+    assert len(all_results) == 1
+    single_file_result = all_results[0]
+    assert single_file_result["file"].startswith(str(path))
+    assert single_file_result["number_of_records"] == 4
+
+    # Validate CSV written to disk
+    async with aiofiles.open(single_file_result["file"], "r") as fl:
+        csv_file = await fl.read()
+        assert EXPECTED_QUERY[0] == csv_file
+
+
+
+async def test_get_all_ingest_records(httpx_mock, sf_client, ingest_responses):
+    """Test bulk2 get *all* records (successful, failed, unprocessed)"""
+    operation = Operation.insert
+    total = len(INSERT_DATA)
+    ingest_responses(
+        operation,
+        processed=total - 1,
+        failed=0,
+    )
+    results = await ingest_data(sf_client, operation, INSERT_DATA, wait=0.1)
+    assert [
+        {
+            "numberRecordsFailed": 0,
+            "numberRecordsProcessed": total - 1,
+            "numberRecordsTotal": total,
+            "job_id": "Job-1",
+        }
+    ] == results
+
+    success_results = textwrap.dedent(
+        """
+        "sf__Id","sf__Created","Id"
+        "a011s00000DTU9zAAH","false","a011s00000DTU9zAAH"
+        "a011s00000DTUA0AAP","false","a011s00000DTUA0AAP"
+        """
+    )
+    failed_results = textwrap.dedent(
+        """
+            "sf__Id","sf__Error","Custom_Id__c","AccountId","Email","FirstName","LastName"
+            "","UNABLE_TO_LOCK_ROW","CustomID1","ID-13","contact1@example.com","Bob","x"
+            "","UNABLE_TO_LOCK_ROW","CustomID2","ID-24","contact2@example.com","Alice","y"
+            """
+    )
+    unprocessed_results = textwrap.dedent(
+        """
+        "Custom_Id__c","AccountId","Email","FirstName","LastName"
+        "CustomID2","ID-24","contact2@example.com","Alice","y"
+        """
+    )
+
+    def make_responses():
+        httpx_mock.add_response(
+            url=re.compile(r"^https://.*/jobs/ingest/Job-1/successfulResults$"),
+            method="GET",
+            text=success_results,
+        )
+        httpx_mock.add_response(
+            method="GET",
+            url=re.compile(r"^https://.*/jobs/ingest/Job-1/failedResults$"),
+            text=failed_results,
+            status_code=http.OK,
+        )
+        httpx_mock.add_response(
+            method="GET",
+            url=re.compile(r"^https://.*/jobs/ingest/Job-1/unprocessedRecords$"),
+            text=unprocessed_results,
+            status_code=http.OK,
+        )
+
+    make_responses()
+    results = await sf_client.bulk2.Contact.get_all_ingest_records("Job-1")
+
+    # This test kind of sucks because it reproduces too much of the implementation
+    assert set(results.keys()) == {"successfulRecords", "failedRecords", "unprocessedRecords"}
+    succ_reader = csv.DictReader(success_results.splitlines())
+    assert list(succ_reader) == results["successfulRecords"]
+    failed_reader = csv.DictReader(failed_results.splitlines())
+    assert list(failed_reader) == results["failedRecords"]
+    unproc_reader = csv.DictReader(unprocessed_results.splitlines())
+    assert list(unproc_reader) == results["unprocessedRecords"]

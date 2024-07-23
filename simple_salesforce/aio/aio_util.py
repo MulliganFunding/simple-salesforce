@@ -43,6 +43,7 @@ async def call_salesforce(
     headers = headers or {}
     additional_headers = kwargs.pop("additional_headers", {})
     headers.update(additional_headers or {})
+
     async with client as session:
         result = await session.request(method, url, headers=headers, **kwargs)
     if result.status_code >= 300:
