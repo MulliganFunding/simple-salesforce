@@ -7,6 +7,7 @@ from unittest import mock
 
 import httpx
 import pytest
+from pytest_httpx import HTTPXMock
 
 from simple_salesforce.exceptions import SalesforceGeneralError
 from simple_salesforce.aio.bulk import AsyncSFBulkType
@@ -74,9 +75,8 @@ EXPECTED_QUERY = [
         ("hardDelete", "hard_delete"),
     ),
 )
-async def test_insert(operation, method_name, sf_client, mock_httpx_client):
+async def test_insert(operation, method_name, sf_client, httpx_mock: HTTPXMock):
     """Test bulk insert records"""
-    _, mock_client, _ = mock_httpx_client
     body1 = {
         "apiVersion": 42.0,
         "concurrencyMode": "Parallel",
@@ -99,8 +99,8 @@ async def test_insert(operation, method_name, sf_client, mock_httpx_client):
     ]
     body7 = {}
     all_bodies = [body1, body2, body3, body4, body5, body6, body7]
-    responses = [httpx.Response(200, content=json.dumps(body)) for body in all_bodies]
-    mock_client.request.side_effect = mock.AsyncMock(side_effect=responses)
+    for body in all_bodies:
+        httpx_mock.add_response(200, json=body)
     data = [
         {
             "AccountId": "ID-1",
@@ -121,9 +121,8 @@ async def test_insert(operation, method_name, sf_client, mock_httpx_client):
 
 
 
-async def test_upsert(sf_client, mock_httpx_client):
+async def test_upsert(sf_client, httpx_mock: HTTPXMock):
     """Test bulk upsert records"""
-    _, mock_client, _ = mock_httpx_client
     operation = "delete"
     body1 = {
         "apiVersion": 42.0,
@@ -147,17 +146,17 @@ async def test_upsert(sf_client, mock_httpx_client):
     ]
     body7 = {}
     all_bodies = [body1, body2, body3, body4, body5, body6, body7]
-    responses = [httpx.Response(200, content=json.dumps(body)) for body in all_bodies]
-    mock_client.request.side_effect = mock.AsyncMock(side_effect=responses)
+    for body in all_bodies:
+        httpx_mock.add_response(200, json=body)
+
     data = [{"id": "ID-1"}, {"id": "ID-2"}]
     result = await sf_client.bulk.Contact.upsert(data, "some-field", wait=0.1)
     assert EXPECTED_RESULT == result
 
 
 
-async def test_query(mock_httpx_client, sf_client):
+async def test_query(httpx_mock: HTTPXMock, sf_client):
     """Test bulk query"""
-    _, mock_client, _ = mock_httpx_client
     operation = "query"
     body1 = {
         "apiVersion": 42.0,
@@ -209,8 +208,9 @@ async def test_query(mock_httpx_client, sf_client):
         },
     ]
     all_bodies = [body1, body2, body3, body4, body5, body6, body7, body8]
-    responses = [httpx.Response(200, content=json.dumps(body)) for body in all_bodies]
-    mock_client.request.side_effect = mock.AsyncMock(side_effect=responses)
+    for body in all_bodies:
+        httpx_mock.add_response(200, json=body)
+
     data = "SELECT Id,AccountId,Email,FirstName,LastName FROM Contact"
     result = await sf_client.bulk.Contact.query(data, wait=0.1, lazy_operation=False)
     assert body7[0] in result
@@ -220,9 +220,8 @@ async def test_query(mock_httpx_client, sf_client):
 
 
 
-async def test_query_all(mock_httpx_client, sf_client):
+async def test_query_all(httpx_mock: HTTPXMock, sf_client):
     """Test bulk query all"""
-    _, mock_client, _ = mock_httpx_client
     operation = "queryAll"
     body1 = {
         "apiVersion": 42.0,
@@ -274,8 +273,9 @@ async def test_query_all(mock_httpx_client, sf_client):
         },
     ]
     all_bodies = [body1, body2, body3, body4, body5, body6, body7, body8]
-    responses = [httpx.Response(200, content=json.dumps(body)) for body in all_bodies]
-    mock_client.request.side_effect = mock.AsyncMock(side_effect=responses)
+    for body in all_bodies:
+        httpx_mock.add_response(200, json=body)
+
     data = "SELECT Id,AccountId,Email,FirstName,LastName FROM Contact"
     result = await sf_client.bulk.Contact.query_all(
         data, wait=0.1, lazy_operation=False
@@ -287,9 +287,8 @@ async def test_query_all(mock_httpx_client, sf_client):
 
 
 
-async def test_query_lazy(mock_httpx_client, sf_client):
+async def test_query_lazy(httpx_mock: HTTPXMock, sf_client):
     """Test lazy bulk query"""
-    _, mock_client, _ = mock_httpx_client
     operation = "queryAll"
     body1 = {
         "apiVersion": 42.0,
@@ -341,8 +340,9 @@ async def test_query_lazy(mock_httpx_client, sf_client):
         },
     ]
     all_bodies = [body1, body2, body3, body4, body5, body6, body7, body8]
-    responses = [httpx.Response(200, content=json.dumps(body)) for body in all_bodies]
-    mock_client.request.side_effect = mock.AsyncMock(side_effect=responses)
+    for body in all_bodies:
+        httpx_mock.add_response(200, json=body)
+
     data = "SELECT Id,AccountId,Email,FirstName,LastName FROM Contact"
     result = await sf_client.bulk.Contact.query_all(data, wait=0.1, lazy_operation=True)
     assert body7[0] in result[0]
@@ -362,9 +362,8 @@ async def test_query_lazy(mock_httpx_client, sf_client):
 
 
 
-async def test_query_fail(mock_httpx_client, sf_client):
+async def test_query_fail(httpx_mock: HTTPXMock, sf_client):
     """Test bulk query records failure"""
-    _, mock_client, _ = mock_httpx_client
     operation = "query"
     body1 = {
         "apiVersion": 42.0,
@@ -393,8 +392,8 @@ async def test_query_fail(mock_httpx_client, sf_client):
         "stateMessage": "InvalidBatch : Failed to process query",
     }
     all_bodies = [body1, body2, body3, body4, body5]
-    responses = [httpx.Response(200, content=json.dumps(body)) for body in all_bodies]
-    mock_client.request.side_effect = mock.AsyncMock(side_effect=responses)
+    for body in all_bodies:
+        httpx_mock.add_response(200, json=body)
 
     data = "SELECT ASDFASfgsds FROM Contact"
     with pytest.raises(SalesforceGeneralError) as exc:
@@ -404,9 +403,8 @@ async def test_query_fail(mock_httpx_client, sf_client):
         assert exc.content == body5["stateMessage"]
 
 
-async def test_bulk_operation_auto_batch_size(mock_httpx_client, sf_client):
+async def test_bulk_operation_auto_batch_size(httpx_mock: HTTPXMock, sf_client):
     """Test that batch_size="auto" leads to using _add_autosized_batches"""
-    _, mock_client, _ = mock_httpx_client
     operation = "update"
     body1 = {
         "apiVersion": 42.0,
@@ -427,8 +425,8 @@ async def test_bulk_operation_auto_batch_size(mock_httpx_client, sf_client):
     }
 
     all_bodies = [body1, body2]
-    responses = [httpx.Response(200, content=json.dumps(body)) for body in all_bodies]
-    mock_client.request.side_effect = mock.AsyncMock(side_effect=responses)
+    for body in all_bodies:
+        httpx_mock.add_response(200, json=body)
 
     data = [{
         'AccountId': 'ID-1',
@@ -439,17 +437,19 @@ async def test_bulk_operation_auto_batch_size(mock_httpx_client, sf_client):
     await sf_client.bulk.Contact._bulk_operation(
         operation, data, batch_size="auto"
     )
-    assert len(mock_client.method_calls) == 2
-    call1, call2 = mock_client.method_calls
-    http_methods = set((call1[1][0], call2[1][0]))
-    http_urls = (call1[1][1], call2[1][1])
+    requests = httpx_mock.get_requests()
+    assert len(requests) == 2
+    req1, req2 = requests
+
+    http_methods = set((req1.method, req2.method))
+    http_urls = (req1.url.path, req2.url.path)
     assert http_methods == {"POST"}
     assert http_urls[0].endswith("/async/job")
     assert http_urls[1].endswith("/async/job/Job-1")
 
 
 @mock.patch('simple_salesforce.aio.bulk.AsyncSFBulkType._add_batch')
-async def test_add_autosized_batches(add_batch, mock_httpx_client, sf_client):
+async def test_add_autosized_batches(add_batch, httpx_mock: HTTPXMock, sf_client):
     """Test that _add_autosized_batches batches all records correctly"""
     # _add_autosized_batches passes the return values from add_batch, so we
     # can pass the data it was given back so that we can test it
