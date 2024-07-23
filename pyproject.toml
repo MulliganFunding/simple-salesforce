@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "async-simple-salesforce"
-version = "1.12.4a1"
+version = "1.12.5a1"
 description = "Async fork of simple-salesforce"
 authors = ["Erik Aker <eaker@mulliganfunding.com>"]
 license = "Apache-2.0"
