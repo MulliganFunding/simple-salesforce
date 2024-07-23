@@ -802,7 +802,7 @@ class AsyncSFBulk2Type:
     async def _retrieve_ingest_records(self, job_id, results_type, file=None):
         """Retrieve the results of an ingest job"""
         if not file:
-            return self._client.get_ingest_results(job_id, results_type)
+            return await self._client.get_ingest_results(job_id, results_type)
         await self._client.download_ingest_results(file, job_id, results_type)
         return ""
 

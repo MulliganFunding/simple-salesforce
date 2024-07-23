@@ -1,11 +1,12 @@
 """Tests for login.py"""
-import json
+
 import os
-from urllib.parse import urlparse
+import re
+from urllib.parse import parse_qs, urlparse
 import warnings
 
-import httpx
 import pytest
+from pytest_httpx import HTTPXMock
 
 from simple_salesforce.api import DEFAULT_API_VERSION
 from simple_salesforce.exceptions import SalesforceAuthenticationFailed
@@ -17,13 +18,14 @@ SOAP_URL = "https://login.salesforce.com/services/Soap/u/"
 OAUTH_TOKEN_URL = "https://login.salesforce.com/services/oauth2/token"
 
 
-
-async def test_default_domain_success(constants, mock_httpx_client):
+async def test_default_domain_success(constants, httpx_mock: HTTPXMock):
     """Test login for default domain"""
-    _, mock_client, inner = mock_httpx_client
-    happy_result = httpx.Response(200, content=constants["LOGIN_RESPONSE_SUCCESS"])
-    inner(happy_result)
-    mock_client.custom_session_attrib = "X-1-2-3"
+
+    httpx_mock.add_response(
+        status_code=200,
+        url=re.compile(SOAP_URL + ".*"),
+        text=constants["LOGIN_RESPONSE_SUCCESS"],
+    )
 
     (session_id, instance_url) = await AsyncSalesforceLogin(
         username="foo@bar.com",
@@ -32,21 +34,22 @@ async def test_default_domain_success(constants, mock_httpx_client):
     )
     assert session_id == constants["SESSION_ID"]
     assert instance_url == urlparse(constants["INSTANCE_URL"]).netloc
-    assert len(mock_client.method_calls) == 1
-    call = mock_client.method_calls[0]
-    assert call[0] == "post"
-    assert call[1][0].startswith(SOAP_URL)
-    assert "SOAPAction" in call[2]["headers"]
-    assert call[2]["headers"]["SOAPAction"] == "login"
+    requests = httpx_mock.get_requests()
+    assert len(requests) == 1
+
+    assert requests[0].method == "POST"
+    assert str(requests[0].url).startswith(SOAP_URL)
+    assert "SOAPAction" in requests[0].headers
+    assert requests[0].headers["SOAPAction"] == "login"
 
 
-
-async def test_custom_domain_success(constants, mock_httpx_client):
+async def test_custom_domain_success(constants, httpx_mock: HTTPXMock):
     """Test login for custom domain"""
-    _, mock_client, inner = mock_httpx_client
-    happy_result = httpx.Response(200, content=constants["LOGIN_RESPONSE_SUCCESS"])
-    inner(happy_result)
-    mock_client.custom_session_attrib = "X-1-2-3"
+    url = re.compile(r"https://testdomain.my.salesforce.com/services/Soap/u/.*")
+
+    httpx_mock.add_response(
+        status_code=200, url=url, text=constants["LOGIN_RESPONSE_SUCCESS"]
+    )
 
     (session_id, instance_url) = await AsyncSalesforceLogin(
         username="foo@bar.com",
@@ -55,19 +58,21 @@ async def test_custom_domain_success(constants, mock_httpx_client):
     )
     assert session_id == constants["SESSION_ID"]
     assert instance_url == urlparse(constants["INSTANCE_URL"]).netloc
-    assert len(mock_client.method_calls) == 1
-    call = mock_client.method_calls[0]
-    assert call[0] == "post"
-    assert call[1][0] == (f"https://testdomain.my.salesforce.com/services/Soap/u/{DEFAULT_API_VERSION}")
-    assert "SOAPAction" in call[2]["headers"]
-    assert call[2]["headers"]["SOAPAction"] == "login"
+    requests = httpx_mock.get_requests()
+    assert len(requests) == 1
+
+    assert requests[0].method == "POST"
+    SOAP_API_URL = (
+        f"https://testdomain.my.salesforce.com/services/Soap/u/{DEFAULT_API_VERSION}"
+    )
+    assert str(requests[0].url).startswith(SOAP_API_URL)
+    assert "SOAPAction" in requests[0].headers
+    assert requests[0].headers["SOAPAction"] == "login"
 
 
-
-async def test_failure(mock_httpx_client):
+async def test_custom_domain_soap_failure(httpx_mock: HTTPXMock):
     """Test login for custom domain"""
-    _, mock_client, inner = mock_httpx_client
-    mock_response = (
+    fail_result = (
         '<?xml version="1.0" encoding="UTF-8"?><soapenv:Envelope '
         'xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" '
         'xmlns:sf="urn:fault.partner.soap.sforce.com" '
@@ -81,13 +86,10 @@ async def test_failure(mock_httpx_client):
         "</sf:exceptionMessage></sf:LoginFault></detail></soapenv:Fault>"
         "</soapenv:Body></soapenv:Envelope>"
     )
-    fail_result = httpx.Response(
-        500,
-        request=httpx.Request("POST", "login.my.salesforce.com"),
-        content=mock_response,
+
+    httpx_mock.add_response(
+        status_code=500, url=re.compile(SOAP_URL + ".*"), text=fail_result
     )
-    inner(fail_result)
-    mock_client.custom_session_attrib = "X-1-2-3"
 
     with pytest.raises(SalesforceAuthenticationFailed):
         await AsyncSalesforceLogin(
@@ -95,12 +97,13 @@ async def test_failure(mock_httpx_client):
             password="password",
             security_token="token",
         )
-    assert len(mock_client.method_calls) == 1
-    call = mock_client.method_calls[0]
-    assert call[0] == "post"
-    assert call[1][0].startswith(SOAP_URL)
-    assert "SOAPAction" in call[2]["headers"]
-    assert call[2]["headers"]["SOAPAction"] == "login"
+    requests = httpx_mock.get_requests()
+    assert len(requests) == 1
+
+    assert requests[0].method == "POST"
+    assert str(requests[0].url).startswith(SOAP_URL)
+    assert "SOAPAction" in requests[0].headers
+    assert requests[0].headers["SOAPAction"] == "login"
 
 
 @pytest.fixture()
@@ -116,16 +119,15 @@ def sample_key(sample_key_filepath):
         return key_file.read()
 
 
-
 async def test_token_login_success_with_key_file(
-    sample_key_filepath, constants, mock_httpx_client
+    sample_key_filepath, constants, httpx_mock: HTTPXMock
 ):
     """Test a successful JWT Token login with a key file"""
-    _, mock_client, inner = mock_httpx_client
-    happy_result = httpx.Response(
-        200, content=constants["TOKEN_LOGIN_RESPONSE_SUCCESS"]
+    httpx_mock.add_response(
+        status_code=200,
+        url=re.compile(OAUTH_TOKEN_URL + ".*"),
+        text=constants["TOKEN_LOGIN_RESPONSE_SUCCESS"],
     )
-    inner(happy_result)
 
     (session_id, instance_url) = await AsyncSalesforceLogin(
         username="foo@bar.com",
@@ -134,25 +136,29 @@ async def test_token_login_success_with_key_file(
     )
     assert session_id == constants["SESSION_ID"]
     assert instance_url == urlparse(constants["INSTANCE_URL"]).netloc
-    assert len(mock_client.method_calls) == 1
-    call = mock_client.method_calls[0]
-    assert call[0] == "post"
-    assert call[1][0].startswith(OAUTH_TOKEN_URL)
-    assert call[2]["data"]["grant_type"] == (
-        "urn:ietf:params:oauth:grant-type:jwt-bearer"
-    )
 
+    requests = httpx_mock.get_requests()
+    assert len(requests) == 1
+
+    assert requests[0].method == "POST"
+    assert str(requests[0].url).startswith(OAUTH_TOKEN_URL)
+    parsed_data = parse_qs(requests[0].content)
+
+    assert parsed_data[b"grant_type"] == (
+        [b"urn:ietf:params:oauth:grant-type:jwt-bearer"]
+    )
 
 
 async def test_token_login_success_with_key_string(
-    sample_key, constants, mock_httpx_client
+    sample_key, constants, httpx_mock: HTTPXMock
 ):
     """Test a successful JWT Token login with a private key"""
-    _, mock_client, inner = mock_httpx_client
-    happy_result = httpx.Response(
-        200, content=constants["TOKEN_LOGIN_RESPONSE_SUCCESS"]
+    httpx_mock.add_response(
+        status_code=200,
+        url=re.compile(OAUTH_TOKEN_URL + ".*"),
+        text=constants["TOKEN_LOGIN_RESPONSE_SUCCESS"],
     )
-    inner(happy_result)
+
     (session_id, instance_url) = await AsyncSalesforceLogin(
         username="foo@bar.com",
         consumer_key="12345.abcde",
@@ -161,25 +167,29 @@ async def test_token_login_success_with_key_string(
 
     assert session_id == constants["SESSION_ID"]
     assert instance_url == urlparse(constants["INSTANCE_URL"]).netloc
-    assert len(mock_client.method_calls) == 1
-    call = mock_client.method_calls[0]
-    assert call[0] == "post"
-    assert call[1][0].startswith(OAUTH_TOKEN_URL)
-    assert call[2]["data"]["grant_type"] == (
-        "urn:ietf:params:oauth:grant-type:jwt-bearer"
-    )
 
+    requests = httpx_mock.get_requests()
+    assert len(requests) == 1
+
+    assert requests[0].method == "POST"
+    assert str(requests[0].url).startswith(OAUTH_TOKEN_URL)
+    parsed_data = parse_qs(requests[0].content)
+
+    assert parsed_data[b"grant_type"] == (
+        [b"urn:ietf:params:oauth:grant-type:jwt-bearer"]
+    )
 
 
 async def test_token_login_success_with_key_bytes(
-    sample_key, constants, mock_httpx_client
+    sample_key, constants, httpx_mock: HTTPXMock
 ):
     """Test a successful JWT Token login with a private key"""
-    _, mock_client, inner = mock_httpx_client
-    happy_result = httpx.Response(
-        200, content=constants["TOKEN_LOGIN_RESPONSE_SUCCESS"]
+    httpx_mock.add_response(
+        status_code=200,
+        url=re.compile(OAUTH_TOKEN_URL + ".*"),
+        text=constants["TOKEN_LOGIN_RESPONSE_SUCCESS"],
     )
-    inner(happy_result)
+
     (session_id, instance_url) = await AsyncSalesforceLogin(
         username="foo@bar.com",
         consumer_key="12345.abcde",
@@ -188,30 +198,28 @@ async def test_token_login_success_with_key_bytes(
 
     assert session_id == constants["SESSION_ID"]
     assert instance_url == urlparse(constants["INSTANCE_URL"]).netloc
-    assert len(mock_client.method_calls) == 1
-    call = mock_client.method_calls[0]
-    assert call[0] == "post"
-    assert call[1][0].startswith(OAUTH_TOKEN_URL)
-    assert call[2]["data"]["grant_type"] == (
-        "urn:ietf:params:oauth:grant-type:jwt-bearer"
+    requests = httpx_mock.get_requests()
+    assert len(requests) == 1
+
+    assert requests[0].method == "POST"
+    assert str(requests[0].url).startswith(OAUTH_TOKEN_URL)
+    parsed_data = parse_qs(requests[0].content)
+
+    assert parsed_data[b"grant_type"] == (
+        [b"urn:ietf:params:oauth:grant-type:jwt-bearer"]
     )
 
 
-
-async def test_token_login_failure(mock_httpx_client, sample_key_filepath):
+async def test_token_login_failure(httpx_mock: HTTPXMock, sample_key_filepath):
     """Test login for custom domain"""
-    _, mock_client, inner = mock_httpx_client
-    fail_result = httpx.Response(
-        400,
-        request=httpx.Request("POST", "login.my.salesforce.com"),
-        content=json.dumps(
-            {
-                "error": "invalid_client_id",
-                "error_description": "client identifier invalid",
-            }
-        ),
+    httpx_mock.add_response(
+        status_code=400,
+        url=re.compile(OAUTH_TOKEN_URL + ".*"),
+        json={
+            "error": "invalid_client_id",
+            "error_description": "client identifier invalid",
+        },
     )
-    inner(fail_result)
 
     with pytest.raises(SalesforceAuthenticationFailed):
         await AsyncSalesforceLogin(
@@ -219,33 +227,31 @@ async def test_token_login_failure(mock_httpx_client, sample_key_filepath):
             consumer_key="12345.abcde",
             privatekey_file=sample_key_filepath,
         )
-    assert len(mock_client.method_calls) == 1
-    call = mock_client.method_calls[0]
+    requests = httpx_mock.get_requests()
+    assert len(requests) == 1
 
-    assert call[0] == "post"
-    assert call[1][0].startswith(OAUTH_TOKEN_URL)
-    assert call[2]["data"]["grant_type"] == (
-        "urn:ietf:params:oauth:grant-type:jwt-bearer"
+    assert requests[0].method == "POST"
+    assert str(requests[0].url).startswith(OAUTH_TOKEN_URL)
+    parsed_data = parse_qs(requests[0].content)
+
+    assert parsed_data[b"grant_type"] == (
+        [b"urn:ietf:params:oauth:grant-type:jwt-bearer"]
     )
-
 
 
 async def test_token_login_failure_with_warning(
-    mock_httpx_client, constants, sample_key_filepath
+    httpx_mock: HTTPXMock, constants, sample_key_filepath
 ):
-    """Test login for custom domain"""
-    _, mock_client, inner = mock_httpx_client
-    fail_result = httpx.Response(
-        400,
-        request=httpx.Request("POST", "login.my.salesforce.com"),
-        content=json.dumps(
-            {
-                "error": "invalid_grant",
-                "error_description": "user hasn't approved this consumer",
-            }
-        ),
+    """Test login failure with warning"""
+    httpx_mock.add_response(
+        status_code=400,
+        url=re.compile(OAUTH_TOKEN_URL + ".*"),
+        json={
+            "error": "invalid_grant",
+            "error_description": "user hasn't approved this consumer",
+        },
     )
-    inner(fail_result)
+
     with warnings.catch_warnings(record=True) as warning:
         with pytest.raises(SalesforceAuthenticationFailed):
             await AsyncSalesforceLogin(
@@ -253,72 +259,79 @@ async def test_token_login_failure_with_warning(
                 consumer_key="12345.abcde",
                 privatekey_file=sample_key_filepath,
             )
-    assert len(mock_client.method_calls) == 1
-    call = mock_client.method_calls[0]
+    requests = httpx_mock.get_requests()
+    assert len(requests) == 1
 
-    assert call[0] == "post"
-    assert call[1][0].startswith(OAUTH_TOKEN_URL)
-    assert call[2]["data"]["grant_type"] == (
-        "urn:ietf:params:oauth:grant-type:jwt-bearer"
+    assert requests[0].method == "POST"
+    assert str(requests[0].url).startswith(OAUTH_TOKEN_URL)
+    parsed_data = parse_qs(requests[0].content)
+
+    assert parsed_data[b"grant_type"] == (
+        [b"urn:ietf:params:oauth:grant-type:jwt-bearer"]
     )
+
     assert len(warning) >= 1
     assert issubclass(warning[-1].category, UserWarning)
     assert str(warning[-1].message) == constants["TOKEN_WARNING"]
 
 
-async def test_connected_app_login_success(constants, mock_httpx_client):
+async def test_connected_app_login_success(constants, httpx_mock: HTTPXMock):
     """Test a successful connected app login with a key file"""
-    _, mock_client, inner = mock_httpx_client
-    happy_result = httpx.Response(
-        200, content=constants["TOKEN_LOGIN_RESPONSE_SUCCESS"]
+
+    httpx_mock.add_response(
+        status_code=200,
+        url=re.compile(OAUTH_TOKEN_URL + ".*"),
+        text=constants["TOKEN_LOGIN_RESPONSE_SUCCESS"],
     )
-    inner(happy_result)
+
     (session_id, instance_url) = await AsyncSalesforceLogin(
         username="foo@bar.com",
         password="password",
         consumer_key="12345.abcde",
-        consumer_secret="12345.abcde"
+        consumer_secret="12345.abcde",
     )
     assert session_id == constants["SESSION_ID"]
     assert instance_url == urlparse(constants["INSTANCE_URL"]).netloc
-    assert len(mock_client.method_calls) == 1
-    call = mock_client.method_calls[0]
-    assert call[0] == "post"
-    assert call[1][0].startswith(OAUTH_TOKEN_URL)
-    assert call[2]["data"]["grant_type"] == "password"
+    requests = httpx_mock.get_requests()
+    assert len(requests) == 1
+
+    assert requests[0].method == "POST"
+    assert str(requests[0].url).startswith(OAUTH_TOKEN_URL)
+    parsed_data = parse_qs(requests[0].content)
+
+    assert parsed_data[b"grant_type"] == [b"password"]
 
 
-async def test_connected_app_login_failure(mock_httpx_client):
+async def test_connected_app_login_failure(httpx_mock: HTTPXMock):
     """Test a failed connected app login"""
-    _, mock_client, inner = mock_httpx_client
-    fail_result = httpx.Response(
-        400,
-        request=httpx.Request("POST", "login.my.salesforce.com"),
-        content=json.dumps({
-            "error": "invalid_client_id",
-            "error_description": "client identifier invalid"
-        }),
+    httpx_mock.add_response(
+        status_code=400,
+        url=re.compile(OAUTH_TOKEN_URL + ".*"),
+        json={
+            "error": "invalid_grant",
+            "error_description": "client identifier invalid",
+        },
     )
-    inner(fail_result)
 
     with pytest.raises(SalesforceAuthenticationFailed):
         await AsyncSalesforceLogin(
-            username='myemail@example.com.sandbox',
-            password='password',
-            consumer_key='12345.abcde',
-            consumer_secret='12345.abcde'
+            username="myemail@example.com.sandbox",
+            password="password",
+            consumer_key="12345.abcde",
+            consumer_secret="12345.abcde",
         )
-    assert len(mock_client.method_calls) == 1
-    call = mock_client.method_calls[0]
+    requests = httpx_mock.get_requests()
+    assert len(requests) == 1
 
-    assert call[0] == "post"
-    assert call[1][0].startswith(OAUTH_TOKEN_URL)
-    assert call[2]["data"]["grant_type"] == "password"
-    assert call[2]["data"]["client_id"] == "12345.abcde"
+    assert requests[0].method == "POST"
+    assert str(requests[0].url).startswith(OAUTH_TOKEN_URL)
+    parsed_data = parse_qs(requests[0].content)
+
+    assert parsed_data[b"grant_type"] == [b"password"]
+    assert parsed_data[b"client_id"] == [b"12345.abcde"]
 
 
-
-async def test_connected_app_client_credentials_login_success(constants, mock_httpx_client):
+async def test_connected_app_client_credentials_login_success(constants, httpx_mock: HTTPXMock):
     """Test a successful connected app login with client credentials"""
     login_args = {
         "consumer_key": "12345.abcde",
@@ -326,34 +339,36 @@ async def test_connected_app_client_credentials_login_success(constants, mock_ht
         "domain": "testdomain.my"
     }
 
-    _, mock_client, inner = mock_httpx_client
-    happy_result = httpx.Response(
-        200, content=constants["TOKEN_LOGIN_RESPONSE_SUCCESS"]
+    httpx_mock.add_response(
+        status_code=200,
+        url=re.compile(r"https://testdomain.my.*" + ".*"),
+        text=constants["TOKEN_LOGIN_RESPONSE_SUCCESS"],
     )
-    inner(happy_result)
     (session_id, instance_url) = await AsyncSalesforceLogin(**login_args)
     assert session_id == constants["SESSION_ID"]
     assert instance_url == urlparse(constants["INSTANCE_URL"]).netloc
-    assert len(mock_client.method_calls) == 1
-    call = mock_client.method_calls[0]
-    assert call[0] == "post"
-    assert call[1][0].startswith(OAUTH_TOKEN_URL.replace("login", "testdomain.my"))
-    assert call[2]["data"]["grant_type"] == "client_credentials"
+
+    requests = httpx_mock.get_requests()
+    assert len(requests) == 1
+
+    assert str(requests[0].url).startswith(OAUTH_TOKEN_URL.replace("login", "testdomain.my"))
+    parsed_data = parse_qs(requests[0].content)
+
+    assert parsed_data[b"grant_type"] == [b"client_credentials"]
 
 
-
-async def test_connected_app_client_credentials_login_failure(mock_httpx_client):
+async def test_connected_app_client_credentials_login_failure(httpx_mock: HTTPXMock):
     """Test a failed connected app login"""
-    _, mock_client, inner = mock_httpx_client
-    fail_result = httpx.Response(
-        400,
-        request=httpx.Request("POST", "login.my.salesforce.com"),
-        content=json.dumps({
-            "error": "invalid_client_id",
-            "error_description": "client identifier invalid"
-        }),
+
+    httpx_mock.add_response(
+        status_code=400,
+        url=re.compile(r"https://testdomain.my.*" + ".*"),
+        json={
+            "error": "invalid_grant",
+            "error_description": "client identifier invalid",
+        },
     )
-    inner(fail_result)
+
     login_args = {
         "consumer_key": "12345.abcde",
         "consumer_secret": "12345.abcde",
@@ -362,9 +377,10 @@ async def test_connected_app_client_credentials_login_failure(mock_httpx_client)
     with pytest.raises(SalesforceAuthenticationFailed):
         await AsyncSalesforceLogin(**login_args)
 
-    assert len(mock_client.method_calls) == 1
-    call = mock_client.method_calls[0]
+    requests = httpx_mock.get_requests()
+    assert len(requests) == 1
 
-    assert call[0] == "post"
-    assert call[1][0].startswith(OAUTH_TOKEN_URL.replace("login", "testdomain.my"))
-    assert call[2]["data"]["grant_type"] == "client_credentials"
+    assert str(requests[0].url).startswith(OAUTH_TOKEN_URL.replace("login", "testdomain.my"))
+    parsed_data = parse_qs(requests[0].content)
+
+    assert parsed_data[b"grant_type"] == [b"client_credentials"]

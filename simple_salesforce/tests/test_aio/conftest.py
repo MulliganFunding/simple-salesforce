@@ -141,48 +141,12 @@ def constants():
     return ALL_CONSTANTS
 
 
-@pytest.fixture()
-def mock_httpx_client(monkeypatch):
-    """
-    Build a mock httpx interface to prevent http calls
-    """
-    mock_httpx = mock.MagicMock(httpx)
-    # prep client
-    mock_client = mock.MagicMock(httpx.AsyncClient)
-    mock_client.__aenter__ = mock.AsyncMock(return_value=mock_client)
-    mock_client.__aexit__ = mock.AsyncMock()
-    mock_client.request = mock.AsyncMock()
-    mock_client.get = mock.AsyncMock()
-    mock_client.post = mock.AsyncMock()
-    mock_client.put = mock.AsyncMock()
-    mock_client.delete = mock.AsyncMock()
-
-    mock_httpx.AsyncClient.return_value = mock_client
-
-    def inner(resp, side_effect=None):
-        """
-        Allows callers to dynamically set the response value on each method.
-        They can also do this with `mock_client` object as well.
-        """
-        mock_client.request = mock.AsyncMock(return_value=resp, side_effect=side_effect)
-        mock_client.get = mock.AsyncMock(return_value=resp, side_effect=side_effect)
-        mock_client.post = mock.AsyncMock(return_value=resp, side_effect=side_effect)
-        mock_client.put = mock.AsyncMock(return_value=resp, side_effect=side_effect)
-        mock_client.delete = mock.AsyncMock(return_value=resp, side_effect=side_effect)
-        return mock_client
-
-    monkeypatch.setattr(httpx, "AsyncClient", mock_httpx.AsyncClient)
-
-    return mock_httpx, mock_client, inner
-
-
 # pylint: disable=unused-argument
 # pylint: disable=redefined-outer-name
 @pytest.fixture()
-def sf_client(constants, mock_httpx_client):
+def sf_client(constants):
     """Simple fixture for crafting the client used below"""
     client = AsyncSalesforce(
-        session_factory=lambda: mock_httpx_client[1],
         session_id=constants["SESSION_ID"],
         proxies=constants["PROXIES"]
     )

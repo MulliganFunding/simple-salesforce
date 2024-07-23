@@ -237,7 +237,7 @@ async def test_sf_bulk2_type_insert(httpx_mock, sf_client, ingest_responses):
         )
     )
 
-    results = sf_client.bulk2.Contact.get_successful_records("Job-1")
+    results = await sf_client.bulk2.Contact.get_successful_records("Job-1")
 
     assert textwrap.dedent("""
         "sf__Id","sf__Created","Custom_Id__c","AccountId","Email","FirstName","LastName"
