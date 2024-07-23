@@ -1,9 +1,9 @@
 """
 Common fixtures for tests in this directory
 """
+import re
 from unittest import mock
 
-import httpx
 import pytest
 
 from simple_salesforce.aio import AsyncSalesforce
@@ -110,12 +110,19 @@ BULK_HEADERS = {
     "X-PrettyPrint": "1",
 }
 
+BULK2_HEADERS = {
+    "Content-Type": "application/json",
+    "Authorization": f"Bearer {SESSION_ID}",
+    "X-PrettyPrint": "1",
+}
+
 ALL_CONSTANTS = {
     "LOGIN_RESPONSE_SUCCESS": LOGIN_RESPONSE_SUCCESS,
     "TOKEN_LOGIN_RESPONSE_SUCCESS": TOKEN_LOGIN_RESPONSE_SUCCESS,
     "TOKEN_WARNING": TOKEN_WARNING,
     "ORGANIZATION_LIMITS_RESPONSE": ORGANIZATION_LIMITS_RESPONSE,
     "BULK_HEADERS": BULK_HEADERS,
+    "BULK2_HEADERS": BULK2_HEADERS,
     "SESSION_ID": "12345",
     "INSTANCE_URL": "https://na15.salesforce.com",
     "TOKEN_ID": "https://na15.salesforce.com/id/00Di0000000icUB/0DFi00000008UYO",
@@ -134,47 +141,12 @@ def constants():
     return ALL_CONSTANTS
 
 
-@pytest.fixture(autouse=True)
-def mock_httpx_client(monkeypatch):
-    """
-    Build a mock httpx interface to prevent http calls
-    """
-    mock_httpx = mock.MagicMock(httpx)
-    # prep client
-    mock_client = mock.MagicMock(httpx.AsyncClient)
-    mock_client.__aenter__ = mock.AsyncMock(return_value=mock_client)
-    mock_client.__aexit__ = mock.AsyncMock()
-    mock_client.get = mock.AsyncMock()
-    mock_client.post = mock.AsyncMock()
-    mock_client.put = mock.AsyncMock()
-    mock_client.delete = mock.AsyncMock()
-
-    mock_httpx.AsyncClient.return_value = mock_client
-
-    def inner(resp):
-        """
-        Allows callers to dynamically set the response value on each method.
-        They can also do this with `mock_client` object as well.
-        """
-        mock_client.request = mock.AsyncMock(return_value=resp)
-        mock_client.get = mock.AsyncMock(return_value=resp)
-        mock_client.post = mock.AsyncMock(return_value=resp)
-        mock_client.put = mock.AsyncMock(return_value=resp)
-        mock_client.delete = mock.AsyncMock(return_value=resp)
-        return mock_client
-
-    monkeypatch.setattr(httpx, "AsyncClient", mock_httpx.AsyncClient)
-
-    return mock_httpx, mock_client, inner
-
-
 # pylint: disable=unused-argument
 # pylint: disable=redefined-outer-name
 @pytest.fixture()
-def sf_client(constants, mock_httpx_client):
+def sf_client(constants):
     """Simple fixture for crafting the client used below"""
     client = AsyncSalesforce(
-        session_factory=lambda: mock_httpx_client[1],
         session_id=constants["SESSION_ID"],
         proxies=constants["PROXIES"]
     )
@@ -187,3 +159,55 @@ def sf_client(constants, mock_httpx_client):
     client.apex_url = "https://localhost/apexrest/"
     client.tooling_url = "https://localhost/tooling/"
     return client
+
+
+TEST_DOMAIN = "https://testdomain.my.salesforce.com"
+SOAP_URL = "https://login.salesforce.com/services/Soap/u/"
+OAUTH_TOKEN_URL = "https://login.salesforce.com/services/oauth2/token"
+
+# Regex patterns for matching URLs
+OATH_TOKEN_URL_PAT = re.compile(r"https://login\.salesforce\.com/services/oauth2/token/?.*")
+SOAP_URL_PAT = re.compile(r"https://login\.salesforce\.com/services/Soap/u/?.*")
+TEST_DOMAIN_PAT = re.compile(r"https://testdomain\.my.*")
+
+@pytest.fixture()
+def urls():
+    return {
+        "soap_url": SOAP_URL,
+        "oauth_token_url": OAUTH_TOKEN_URL,
+        "soap_url_pat": SOAP_URL_PAT,
+        "oauth_token_url_pat": OATH_TOKEN_URL_PAT,
+        "test_domain": TEST_DOMAIN,
+        "test_domain_pat": TEST_DOMAIN_PAT,
+    }
+
+
+@pytest.fixture()
+def test_domain():
+    return TEST_DOMAIN
+
+
+@pytest.fixture()
+def soap_login_url():
+    return SOAP_URL
+
+
+@pytest.fixture()
+def oauth_token_url():
+    return OAUTH_TOKEN_URL
+
+
+@pytest.fixture()
+def soap_url_pat():
+    return SOAP_URL_PAT
+
+
+@pytest.fixture()
+def oauth_token_url_pat():
+    return OATH_TOKEN_URL_PAT
+
+
+@pytest.fixture()
+def test_domain_pat():
+    return TEST_DOMAIN_PAT
+

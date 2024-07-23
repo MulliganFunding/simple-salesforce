@@ -20,6 +20,7 @@ from simple_salesforce.exceptions import (
 )
 from simple_salesforce.util import date_to_iso8601, exception_handler
 from .bulk import AsyncSFBulkHandler
+from .bulk2 import AsyncSFBulk2Handler
 from .login import AsyncSalesforceLogin
 from .metadata import AsyncSfdcMetadataApi
 from .aio_util import create_session_factory
@@ -200,6 +201,18 @@ async def build_async_salesforce_client(
             proxies=proxies,
             domain=domain,
         )
+    elif all(arg is not None for arg in(
+            consumer_key, consumer_secret, domain
+        )):
+            instance_kwargs["auth_type"] = "client-credentials"
+            login_refresh = partial(
+                AsyncSalesforceLogin,
+                session_factory=session_factory,
+                consumer_key=consumer_key,
+                consumer_secret=consumer_secret,
+                proxies=proxies,
+                domain=domain,
+            )
     else:
         raise TypeError("You must provide login information or an instance and token")
 
@@ -309,6 +322,9 @@ class AsyncSalesforce:
         self.base_url = f"https://{self.sf_instance}/services/data/v{self.sf_version}/"
         self.apex_url = f"https://{self.sf_instance}/services/apexrest/"
         self.bulk_url = f"https://{self.sf_instance}/services/async/{self.sf_version}/"
+        self.bulk2_url = (
+            f'https://{self.sf_instance}/services/data/v{self.sf_version}/jobs/'
+        )
         self.metadata_url = (
             f"https://{self.sf_instance}/services/Soap/m/{self.sf_version}/"
         )
@@ -412,6 +428,13 @@ class AsyncSalesforce:
                 self.session_id,
                 self.bulk_url,
                 self._proxies,
+                session_factory=self.session_factory,
+            )
+        if name == 'bulk2':
+            return AsyncSFBulk2Handler(
+                self.session_id,
+                self.bulk2_url,
+                self.proxies,
                 session_factory=self.session_factory,
             )
 
