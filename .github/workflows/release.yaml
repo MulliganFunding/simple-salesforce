@@ -20,8 +20,8 @@ jobs:
         run: "pip install poetry"
       - name: "Configure poetry"
         run: "poetry config virtualenvs.create false --local"
-      - name: "Run poetry update"
-        run: "poetry update"
+      - name: "Run poetry install deps"
+        run: "poetry install --no-root"
       - name: "Build and release"
         run: |
           poetry build
