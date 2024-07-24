@@ -29,7 +29,7 @@ from simple_salesforce.bulk2 import (
     ColumnDelimiter,
     LineEnding,
     ResultsType,
-    _convert_dict_to_csv, # Dedupe from upstream
+    _convert_dict_to_csv,  # Dedupe from upstream
     _delimiter_char,  # Dedupe from upstream
     _line_ending_char,  # Dedupe from upstream
     MAX_INGEST_JOB_FILE_SIZE,
@@ -753,6 +753,39 @@ class AsyncSFBulk2Type:
         """
         res = await self._client.create_job(
             Operation.query, query, column_delimiter, line_ending
+        )
+        job_id = res["id"]
+        await self._client.wait_for_job(job_id, True, wait)
+
+        locator = "INIT"
+        while locator:
+            if locator == "INIT":
+                locator = ""
+            result = await self._client.get_query_results(job_id, locator, max_records)
+            locator = result["locator"]
+            yield result["records"]
+
+    async def query_all(
+        self,
+        query: str,
+        max_records: int = DEFAULT_QUERY_PAGE_SIZE,
+        column_delimiter: ColumnDelimiter = ColumnDelimiter.COMMA,
+        line_ending: LineEnding = LineEnding.LF,
+        wait: int = 5,
+    ):
+        """bulk 2.0 query_all
+
+        Arguments:
+        * query -- SOQL query
+        * max_records -- max records to retrieve per batch, default 50000
+
+        Returns:
+        * locator  -- the locator for the next set of results
+        * number_of_records -- the number of records in this set
+        * records -- records in this set
+        """
+        res = await self._client.create_job(
+            Operation.query_all, query, column_delimiter, line_ending
         )
         job_id = res["id"]
         await self._client.wait_for_job(job_id, True, wait)

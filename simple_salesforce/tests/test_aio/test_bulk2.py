@@ -397,6 +397,92 @@ async def test_query(httpx_mock, sf_client):
     assert EXPECTED_QUERY == results
 
 
+async def test_query_all(httpx_mock, sf_client):
+    """Test bulk2 query records"""
+    operation = Operation.query
+    httpx_mock.add_response(
+        method="POST",
+        url=re.compile(r"^https://.*/jobs/query$"),
+        text=to_body(
+            {
+                "apiVersion": 52.0,
+                "columnDelimiter": "COMMA",
+                "concurrencyMode": "Parallel",
+                "contentType": "CSV",
+                "id": "Job-1",
+                "lineEnding": "LF",
+                "object": "Contact",
+                "operation": operation,
+                "state": JobState.upload_complete,
+            }
+        ),
+        status_code=http.OK,
+    )
+    httpx_mock.add_response(
+        method="GET",
+        url=re.compile(r"^https://.*/jobs/query/Job-1$"),
+        text=to_body(
+            {
+                "apiVersion": 52.0,
+                "columnDelimiter": "COMMA",
+                "concurrencyMode": "Parallel",
+                "contentType": "CSV",
+                "id": "Job-1",
+                "jobType": "V2Query",
+                "lineEnding": "LF",
+                "numberRecordsProcessed": 4,
+                "object": "Contact",
+                "operation": operation,
+                "state": JobState.in_progress,
+            }
+        ),
+        status_code=http.OK,
+    )
+    httpx_mock.add_response(
+        method="GET",
+        url=re.compile(r"^https://.*/jobs/query/Job-1$"),
+        text=to_body(
+            {
+                "apiVersion": 52.0,
+                "columnDelimiter": "COMMA",
+                "concurrencyMode": "Parallel",
+                "contentType": "CSV",
+                "id": "Job-1",
+                "jobType": "V2Query",
+                "lineEnding": "LF",
+                "numberRecordsProcessed": 4,
+                "object": "Contact",
+                "operation": operation,
+                "state": JobState.job_complete,
+            }
+        ),
+        status_code=http.OK,
+    )
+    httpx_mock.add_response(
+        method="GET",
+        url=re.compile(r"^https://.*/jobs/query/Job-1/results\?maxRecords=\d+$"),
+        text=textwrap.dedent(
+            """
+            "Id","AccountId","Email","FirstName","LastName"
+            "001xx000003DHP0AAO","ID-13","contact1@example.com","Bob","x"
+            "001xx000003DHP1AAO","ID-24","contact2@example.com","Alice","y"
+            "001xx000003DHP0AAO","ID-13","contact1@example.com","Bob","x"
+            "001xx000003DHP1AAO","ID-24","contact2@example.com","Alice","y"
+            """
+        ),
+        headers={
+            "Sforce-NumberOfRecords": "4",
+            "Sforce-Query-Locator": "",
+        },
+        status_code=http.OK,
+    )
+
+    query = "SELECT Id,AccountId,Email,FirstName,LastName FROM Contact"
+    results = []
+    async for result in sf_client.bulk2.Contact.query_all(query):
+        results.append(result)
+    assert EXPECTED_QUERY == results
+
 async def test_get_failed_record_results(httpx_mock, sf_client, ingest_responses):
     """Test bulk2 get failed records"""
     operation = Operation.insert

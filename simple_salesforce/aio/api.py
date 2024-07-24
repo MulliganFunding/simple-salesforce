@@ -992,7 +992,7 @@ class AsyncSFType:
         )
         return self.parse_result_to_json(result)
 
-    async def get(self, record_id, headers=None):
+    async def get(self, record_id, headers=None, **kwargs):
         """Returns the result of a GET to `.../{object_name}/{record_id}` as a
         dict decoded from the JSON payload returned by Salesforce.
 
@@ -1002,7 +1002,7 @@ class AsyncSFType:
         * headers -- a dict with additional request headers.
         """
         result = await self._call_salesforce(
-            method="GET", url=urljoin(self.base_url, record_id), headers=headers
+            method="GET", url=urljoin(self.base_url, record_id), headers=headers, **kwargs
         )
         return self.parse_result_to_json(result)
 
