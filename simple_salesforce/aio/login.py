@@ -17,25 +17,26 @@ import httpx
 from simple_salesforce.api import DEFAULT_API_VERSION
 from simple_salesforce.login import DEFAULT_CLIENT_ID_PREFIX
 from simple_salesforce.exceptions import SalesforceAuthenticationFailed
-from simple_salesforce.util import getUniqueElementValueFromXmlString
+from simple_salesforce.util import getUniqueElementValueFromXmlString, Proxies
 
 
 # pylint: disable=invalid-name,too-many-arguments,too-many-locals
 async def AsyncSalesforceLogin(
-    username=None,
-    password=None,
-    security_token=None,
-    organizationId=None,
-    sf_version=DEFAULT_API_VERSION,
-    proxies=None,
+    username: str | None = None,
+    password: str | None = None,
+    security_token: str | None = None,
+    organizationId: str | None = None,
+    sf_version: str =DEFAULT_API_VERSION,
+    proxies: Proxies | None = None,
     session=None,
     session_factory=None,
-    client_id=None,
-    domain=None,
-    consumer_key=None,
-    consumer_secret=None,
-    privatekey_file=None,
-    privatekey=None,
+    client_id: str | None = None,
+    domain: str | None = None,
+    instance_url: str | None = None,
+    consumer_key: str | None = None,
+    consumer_secret: str | None = None,
+    privatekey_file: str | None = None,
+    privatekey: str | None = None,
 ) -> typing.Tuple[str, str]:
     """Return a tuple of `(session_id, sf_instance)` where `session_id` is the
     session ID to use for authentication to Salesforce and `sf_instance` is
@@ -59,6 +60,8 @@ async def AsyncSalesforceLogin(
                 common domains, such as 'login' or 'test', or
                 Salesforce My domain. If not used, will default to
                 'login'.
+    * instance_url -- Non-standard instance url (instance.my) used
+                for connecting to Salesforce with JWT tokens.
     * consumer_key -- the consumer key generated for the user/app
     * consumer_secret -- the consumer secret generated for the user/app
     * privatekey_file -- the path to the private key file used
@@ -182,6 +185,7 @@ async def AsyncSalesforceLogin(
         and consumer_key is not None
         and (privatekey_file is not None or privatekey is not None)
     ):
+        token_domain = instance_url if instance_url is not None else domain
         expiration = datetime.now(timezone.utc) + timedelta(minutes=3)
         payload = {
             "iss": consumer_key,
@@ -203,7 +207,7 @@ async def AsyncSalesforceLogin(
         }
 
         return await token_login(
-            f"https://{domain}.salesforce.com/services/oauth2/token",
+            f"https://{token_domain}.salesforce.com/services/oauth2/token",
             token_data,
             domain,
             consumer_key,

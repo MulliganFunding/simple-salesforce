@@ -195,6 +195,7 @@ async def build_async_salesforce_client(
             AsyncSalesforceLogin,
             session_factory=session_factory,
             username=username,
+            instance_url=instance_url,
             consumer_key=consumer_key,
             privatekey_file=privatekey_file,
             privatekey=privatekey,
