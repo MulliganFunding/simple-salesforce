@@ -1,10 +1,19 @@
 """Utility functions for simple-salesforce async calls"""
+
 from functools import partial
-from typing import Callable, Dict, Optional
+from typing import Callable, NoReturn, Optional
 
 import httpx
 
-from simple_salesforce.util import exception_handler
+from simple_salesforce.exceptions import (
+    SalesforceExpiredSession,
+    SalesforceGeneralError,
+    SalesforceMalformedRequest,
+    SalesforceMoreThanOneRecord,
+    SalesforceRefusedRequest,
+    SalesforceResourceNotFound,
+)
+from simple_salesforce.util import Headers
 
 
 def create_session_factory(
@@ -27,7 +36,7 @@ def create_session_factory(
 async def call_salesforce(
     url: str = "",
     method: str = "GET",
-    headers: Optional[Dict] = None,
+    headers: Optional[Headers] = None,
     session_factory: Optional[Callable[[], httpx.AsyncClient]] = None,
     **kwargs
 ):
@@ -50,3 +59,23 @@ async def call_salesforce(
         exception_handler(result)
 
     return result
+
+
+def exception_handler(result: httpx.Response, name: str = "") -> NoReturn:
+    """Exception router. Determines which error to raise for bad results"""
+    try:
+        response_content = result.json()
+    # pylint: disable=broad-except
+    except Exception:
+        response_content = result.text
+
+    exc_map = {
+        300: SalesforceMoreThanOneRecord,
+        400: SalesforceMalformedRequest,
+        401: SalesforceExpiredSession,
+        403: SalesforceRefusedRequest,
+        404: SalesforceResourceNotFound,
+    }
+    exc_cls = exc_map.get(result.status_code, SalesforceGeneralError)
+
+    raise exc_cls(result.url, result.status_code, name, response_content)

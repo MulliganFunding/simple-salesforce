@@ -17,7 +17,7 @@ import httpx
 from simple_salesforce.api import DEFAULT_API_VERSION
 from simple_salesforce.login import DEFAULT_CLIENT_ID_PREFIX
 from simple_salesforce.exceptions import SalesforceAuthenticationFailed
-from simple_salesforce.util import getUniqueElementValueFromXmlString, Proxies
+from simple_salesforce.util import Headers, Proxies, getUniqueElementValueFromXmlString
 
 
 # pylint: disable=invalid-name,too-many-arguments,too-many-locals
@@ -26,10 +26,10 @@ async def AsyncSalesforceLogin(
     password: str | None = None,
     security_token: str | None = None,
     organizationId: str | None = None,
-    sf_version: str =DEFAULT_API_VERSION,
+    sf_version: str = DEFAULT_API_VERSION,
     proxies: Proxies | None = None,
-    session=None,
-    session_factory=None,
+    session: httpx.AsyncClient | None = None,
+    session_factory: typing.Callable[[], httpx.AsyncClient] | None = None,
     client_id: str | None = None,
     domain: str | None = None,
     instance_url: str | None = None,
@@ -258,7 +258,13 @@ async def AsyncSalesforceLogin(
     )
 
 
-async def soap_login(soap_url, request_body, headers, proxies, session_factory=None):
+async def soap_login(
+    soap_url: str,
+    request_body: str,
+    headers: Headers | None,
+    proxies: Proxies | None,
+    session_factory: typing.Callable[[], httpx.AsyncClient] | None = None,
+):
     """Process SOAP specific login workflow."""
     if session_factory:
         client = session_factory()
@@ -293,7 +299,13 @@ async def soap_login(soap_url, request_body, headers, proxies, session_factory=N
 
 
 async def token_login(
-    token_url, token_data, domain, consumer_key, headers, proxies, session_factory=None
+    token_url: str,
+    token_data: typing.Dict[str, typing.Any],
+    domain: str,
+    consumer_key: str,
+    headers: Headers | None,
+    proxies: Proxies | None,
+    session_factory: typing.Callable[[], httpx.AsyncClient] | None = None,
 ):
     """Process OAuth 2.0 JWT Bearer Token Flow."""
     if session_factory:

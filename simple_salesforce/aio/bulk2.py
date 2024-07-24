@@ -594,6 +594,8 @@ class AsyncSFBulk2Type:
             split_data = _split_csv(records=records, max_records=batch_size)
 
         futures = []
+        # This may load all data into memory causing OOMKilled behavior
+        # Investigate and fix
         async for data in split_data:
             futures.append(
                 self._upload_data(
