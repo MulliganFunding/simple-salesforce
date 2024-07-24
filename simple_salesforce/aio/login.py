@@ -13,11 +13,12 @@ import warnings
 
 import jwt
 import httpx
+from httpx import Headers, URL, Proxy
 
 from simple_salesforce.api import DEFAULT_API_VERSION
 from simple_salesforce.login import DEFAULT_CLIENT_ID_PREFIX
 from simple_salesforce.exceptions import SalesforceAuthenticationFailed
-from simple_salesforce.util import Headers, Proxies, getUniqueElementValueFromXmlString
+from simple_salesforce.util import Proxies, getUniqueElementValueFromXmlString
 
 
 # pylint: disable=invalid-name,too-many-arguments,too-many-locals
@@ -27,7 +28,7 @@ async def AsyncSalesforceLogin(
     security_token: str | None = None,
     organizationId: str | None = None,
     sf_version: str = DEFAULT_API_VERSION,
-    proxies: Proxies | None = None,
+    proxies: str | URL | Proxy | None = None,
     session: httpx.AsyncClient | None = None,
     session_factory: typing.Callable[[], httpx.AsyncClient] | None = None,
     client_id: str | None = None,
@@ -193,11 +194,13 @@ async def AsyncSalesforceLogin(
             "aud": f"https://{domain}.salesforce.com",
             "exp": f"{expiration.timestamp():.0f}",
         }
+        # PyJWT allows string or bytes for private key
+        key: str | bytes
         if privatekey_file is not None:
             async with aiofiles.open(privatekey_file, "rb") as key_file:
                 key = await key_file.read()
         else:
-            key = privatekey
+            key = privatekey  # type: ignore[assignment]
 
         assertion = jwt.encode(payload, key, algorithm="RS256")
 
@@ -224,7 +227,7 @@ async def AsyncSalesforceLogin(
         token_data = {"grant_type": "client_credentials"}
         authorization = f"{consumer_key}:{consumer_secret}"
         encoded = base64.b64encode(authorization.encode()).decode()
-        headers = {"Authorization": f"Basic {encoded}"}
+        headers = Headers({"Authorization": f"Basic {encoded}"})
         return await token_login(
             f"https://{domain}.salesforce.com/services/oauth2/token",
             token_data,
@@ -243,11 +246,11 @@ async def AsyncSalesforceLogin(
         raise SalesforceAuthenticationFailed(except_code, except_msg)
 
     soap_url = f"https://{domain}.salesforce.com/services/Soap/u/{sf_version}"
-    login_soap_request_headers = {
+    login_soap_request_headers = Headers({
         "content-type": "text/xml",
         "charset": "UTF-8",
         "SOAPAction": "login",
-    }
+    })
 
     return await soap_login(
         soap_url,
@@ -262,9 +265,9 @@ async def soap_login(
     soap_url: str,
     request_body: str,
     headers: Headers | None,
-    proxies: Proxies | None,
+    proxies: str | URL | Proxy | None,
     session_factory: typing.Callable[[], httpx.AsyncClient] | None = None,
-):
+) -> typing.Tuple[str, str]:
     """Process SOAP specific login workflow."""
     if session_factory:
         client = session_factory()
@@ -274,7 +277,7 @@ async def soap_login(
         client = httpx.AsyncClient()
 
     async with client as session:
-        response = await session.post(soap_url, data=request_body, headers=headers)
+        response = await session.post(soap_url, content=request_body, headers=headers)
 
     if response.status_code != 200:
         except_code = getUniqueElementValueFromXmlString(
@@ -282,11 +285,11 @@ async def soap_login(
         )
         except_msg = getUniqueElementValueFromXmlString(
             response.content, "sf:exceptionMessage"
-        )
+        ) or "Unknown Error"
         raise SalesforceAuthenticationFailed(except_code, except_msg)
 
-    session_id = getUniqueElementValueFromXmlString(response.content, "sessionId")
-    server_url = getUniqueElementValueFromXmlString(response.content, "serverUrl")
+    session_id = getUniqueElementValueFromXmlString(response.content, "sessionId") or ""
+    server_url = getUniqueElementValueFromXmlString(response.content, "serverUrl") or ""
 
     sf_instance = (
         server_url.replace("http://", "")
@@ -304,9 +307,9 @@ async def token_login(
     domain: str,
     consumer_key: str,
     headers: Headers | None,
-    proxies: Proxies | None,
+    proxies: str | URL | Proxy | None,
     session_factory: typing.Callable[[], httpx.AsyncClient] | None = None,
-):
+) -> typing.Tuple[str, str]:
     """Process OAuth 2.0 JWT Bearer Token Flow."""
     if session_factory:
         client = session_factory()
