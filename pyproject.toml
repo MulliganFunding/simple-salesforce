@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "async-simple-salesforce"
-version = "1.12.5a1"
+version = "1.12.6a1"
 description = "Async fork of simple-salesforce"
 authors = ["Erik Aker <eaker@mulliganfunding.com>"]
 license = "Apache-2.0"
@@ -13,9 +13,11 @@ include = ["LICENSE.txt"]
 python = "^3.10"
 aiofiles = "<24"
 httpx = "<1"
+more-itertools = "*"
 pendulum = "^3"
-PyJWT = "<3"
+PyJWT = {version = "<3", extras = ["crypto"]}
 requests = "<3"
+typing-extensions = "*"
 zeep = "<5"
 
 [tool.poetry.group.dev.dependencies]

@@ -5,7 +5,7 @@ This is an **async fork** of the library [simple-salesforce](https://github.com/
 This fork is available on PyPI and can be installed like this:
 
 ```sh
-$ pip install "async-simple-salesforce==1.12.4a1"
+$ pip install "async-simple-salesforce==1.12.6a1"
 
 ```
 
