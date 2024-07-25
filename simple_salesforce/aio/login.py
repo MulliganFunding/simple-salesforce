@@ -28,7 +28,7 @@ async def AsyncSalesforceLogin(
     security_token: str | None = None,
     organizationId: str | None = None,
     sf_version: str = DEFAULT_API_VERSION,
-    proxies: str | URL | Proxy | None = None,
+    proxies: Proxies | None = None,
     session: httpx.AsyncClient | None = None,
     session_factory: typing.Callable[[], httpx.AsyncClient] | None = None,
     client_id: str | None = None,
@@ -265,7 +265,7 @@ async def soap_login(
     soap_url: str,
     request_body: str,
     headers: Headers | None,
-    proxies: str | URL | Proxy | None,
+    proxies: Proxies | None,
     session_factory: typing.Callable[[], httpx.AsyncClient] | None = None,
 ) -> typing.Tuple[str, str]:
     """Process SOAP specific login workflow."""
@@ -307,7 +307,7 @@ async def token_login(
     domain: str,
     consumer_key: str,
     headers: Headers | None,
-    proxies: str | URL | Proxy | None,
+    proxies: Proxies | None,
     session_factory: typing.Callable[[], httpx.AsyncClient] | None = None,
 ) -> typing.Tuple[str, str]:
     """Process OAuth 2.0 JWT Bearer Token Flow."""

@@ -1,7 +1,7 @@
 """Utility functions for simple-salesforce async calls"""
 
 from functools import partial
-from typing import Callable, NoReturn, Optional
+from typing import Any, Callable, NoReturn, Optional
 
 import httpx
 
@@ -13,11 +13,11 @@ from simple_salesforce.exceptions import (
     SalesforceRefusedRequest,
     SalesforceResourceNotFound,
 )
-from simple_salesforce.util import Headers
+from simple_salesforce.util import Headers, Proxies
 
 
 def create_session_factory(
-    proxies=None, timeout: Optional[int] = None
+    proxies: Proxies | None = None, timeout: Optional[int] = None
 ) -> Callable[[], httpx.AsyncClient]:
     """
     Convenience function for repeatedly returning the properly constructed
@@ -38,8 +38,8 @@ async def call_salesforce(
     method: str = "GET",
     headers: Optional[Headers] = None,
     session_factory: Optional[Callable[[], httpx.AsyncClient]] = None,
-    **kwargs
-):
+    **kwargs: Any,
+) -> httpx.Response:
     """Utility method for performing HTTP call to Salesforce.
 
     Returns a `httpx.Response` object.
@@ -78,4 +78,4 @@ def exception_handler(result: httpx.Response, name: str = "") -> NoReturn:
     }
     exc_cls = exc_map.get(result.status_code, SalesforceGeneralError)
 
-    raise exc_cls(result.url, result.status_code, name, response_content)
+    raise exc_cls(str(result.url), result.status_code, name, response_content)

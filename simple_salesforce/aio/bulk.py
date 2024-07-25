@@ -113,7 +113,7 @@ class AsyncSFBulkType:
             method="POST",
             session_factory=self.session_factory,
             headers=self.headers,
-            data=json.dumps(payload, allow_nan=False),
+            content=json.dumps(payload, allow_nan=False),
         )
         return result.json(object_pairs_hook=OrderedDict)
 
@@ -128,7 +128,7 @@ class AsyncSFBulkType:
             method="POST",
             session_factory=self.session_factory,
             headers=self.headers,
-            data=json.dumps(payload, allow_nan=False),
+            content=json.dumps(payload, allow_nan=False),
         )
         return result.json(object_pairs_hook=OrderedDict)
 
@@ -160,7 +160,7 @@ class AsyncSFBulkType:
             method="POST",
             session_factory=self.session_factory,
             headers=self.headers,
-            data=data,
+            content=data,
         )
         return result.json(object_pairs_hook=OrderedDict)
 

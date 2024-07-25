@@ -4,28 +4,30 @@ import aiofiles
 import asyncio
 import base64
 from collections import OrderedDict
+from datetime import datetime
 from functools import partial, wraps
 import json
 import logging
+from pathlib import Path
 import re
 from typing import (
     Any,
     AsyncGenerator,
     Awaitable,
     Callable,
-    Coroutine,
     Dict,
-    IO,
     List,
     Mapping,
     MutableMapping,
     Optional,
+    TypeVar,
     Tuple,
 )
 from urllib.parse import urljoin, urlparse
 import warnings
 
 import httpx
+from typing_extensions import ParamSpec
 
 from simple_salesforce.api import DEFAULT_API_VERSION, PerAppUsage, Usage
 from simple_salesforce.exceptions import (
@@ -53,7 +55,7 @@ async def build_async_salesforce_client(
     instance_url: Optional[str] = None,
     organizationId: Optional[str] = None,
     version: str = DEFAULT_API_VERSION,
-    proxies: Optional[Proxies] = None,
+    proxies: Proxies | None = None,
     client_id: Optional[str] = None,
     domain: Optional[str] = None,
     consumer_key: Optional[str] = None,
@@ -161,10 +163,10 @@ async def build_async_salesforce_client(
         # If the user provides the full url (as returned by the OAuth
         # interface for example) extract the hostname (which we rely on)
         if instance_url is not None:
-            instance_kwargs["sf_instance"] = urlparse(instance_url).hostname  # type: ignore[assignment]
+            instance_kwargs["sf_instance"] = urlparse(instance_url).hostname
             port = urlparse(instance_url).port
             if port not in (None, 443):
-                instance_kwargs["sf_instance"] += f":{port}"  # type: ignore[assignment]
+                instance_kwargs["sf_instance"] += f":{port}"  # type: ignore
         else:
             instance_kwargs["sf_instance"] = instance
 
@@ -233,12 +235,20 @@ async def build_async_salesforce_client(
         instance_kwargs["session_id"] = session_id
         instance_kwargs["sf_instance"] = sf_instance
         instance_kwargs["login_refresh"] = login_refresh
-    return AsyncSalesforce(**instance_kwargs)
+
+    # TODO: type this dict so we can tell if we're calling constructor properly
+    return AsyncSalesforce(**instance_kwargs)  # type: ignore
 
 
+# See https://mypy.readthedocs.io/en/stable/generics.html#declaring-decorators
+Param = ParamSpec("Param")
+RetType = TypeVar("RetType")
+
+
+# This decorator is used to retry a function ONCE if the session has expired
 def async_retry_expired_session(
-    async_fn: Coroutine[Any, Any, Any]
-) -> Coroutine[Any, Any, Any]:
+    async_fn: Callable[Param, Awaitable[RetType]]
+) -> Callable[Param, Awaitable[RetType]]:
     """Decorator for AsyncSalesforce methods with retries for expired session"""
     if not asyncio.iscoroutinefunction(async_fn):
         raise ValueError(
@@ -249,7 +259,7 @@ def async_retry_expired_session(
         )
 
     @wraps(async_fn)
-    async def inner(client, *args, **kwargs) -> Any:
+    async def inner(client: Any, *args: Param.args, **kwargs: Param.kwargs) -> RetType:
         try:
             return await async_fn(client, *args, **kwargs)
         except SalesforceExpiredSession:
@@ -260,7 +270,9 @@ def async_retry_expired_session(
             await client.refresh_session()
             return await async_fn(client, *args, **kwargs)
 
-    return inner
+    # Mypy doesn't like the _Wrapped[...] type returned by wraps
+    # see: https://github.com/python/mypy/issues/17166
+    return inner  # type: ignore
 
 
 # pylint: disable=too-many-instance-attributes
@@ -278,7 +290,7 @@ class AsyncSalesforce:
     def __init__(
         self,
         version: str = DEFAULT_API_VERSION,
-        proxies: Optional[Proxies] = None,
+        proxies: Proxies | None = None,
         session_factory: Optional[Callable[[], httpx.AsyncClient]] = None,
         domain: Optional[str] = None,
         auth_type: Optional[str] = None,
@@ -321,16 +333,16 @@ class AsyncSalesforce:
         self.sf_instance = sf_instance
         self.sf_version = version
         self.domain = domain or ""
-        self.session_factory = session_factory
         self._proxies = proxies
         self.request_timeout_seconds = request_timeout_seconds
         self.login_refresh = login_refresh
 
         # override custom session proxies dance
-        if not self.session_factory:
-            self.session_factory = create_session_factory(
+        if not session_factory:
+            session_factory = create_session_factory(
                 self._proxies, timeout=self.request_timeout_seconds
             )
+        self.session_factory = session_factory
 
         self.auth_site = f"https://{domain}.salesforce.com"
         self.headers = self._generate_headers()
@@ -347,7 +359,7 @@ class AsyncSalesforce:
         self.oauth2_url = f"https://{self.sf_instance}/services/oauth2/"
         self.tooling_url = f"{self.base_url}tooling/"
 
-        self.api_usage = {}
+        self.api_usage: MutableMapping[str, Usage | PerAppUsage] = {}
         self._parse_float = parse_float
         self._object_pairs_hook = object_pairs_hook  # type: ignore[assignment]
         self._mdapi: AsyncSfdcMetadataApi | None = None
@@ -390,7 +402,7 @@ class AsyncSalesforce:
     def can_refresh(self) -> bool:
         return self.login_refresh is not None
 
-    async def describe(self, **kwargs) -> Optional[Any]:
+    async def describe(self, **kwargs: Any) -> Optional[Any]:
         """Describes all available objects
 
         Arguments:
@@ -456,8 +468,8 @@ class AsyncSalesforce:
 
         return AsyncSFType(
             name,
-            self.session_id,
-            self.sf_instance,
+            self.session_id or "",
+            self.sf_instance or "",
             sf_version=self.sf_version,
             proxies=self._proxies,
             salesforce=self,
@@ -482,7 +494,7 @@ class AsyncSalesforce:
         url = f"{self.base_url}sobjects/User/{user}/password"
         params = {"NewPassword": password}
 
-        result = await self._call_salesforce("POST", url, data=json.dumps(params))
+        result = await self._call_salesforce("POST", url, content=json.dumps(params))
 
         if result.status_code == 204:
             return None
@@ -739,7 +751,7 @@ class AsyncSalesforce:
             method,
             self.tooling_url + action,
             name="toolingexecute",
-            data=json_data,
+            content=json_data,
             **kwargs,
         )
         try:
@@ -770,7 +782,11 @@ class AsyncSalesforce:
         # None in json.
         json_data = json.dumps(data) if data is not None else None
         result = await self._call_salesforce(
-            method, self.apex_url + action, name="apexecute", data=json_data, **kwargs
+            method,
+            self.apex_url + action,
+            name="apexecute",
+            content=json_data,
+            **kwargs,
         )
         try:
             response_content = result.json()
@@ -783,7 +799,7 @@ class AsyncSalesforce:
     @async_retry_expired_session
     async def _call_salesforce(
         self, method: str, url: str, name: str = "", **kwargs: Any
-    ):
+    ) -> httpx.Response:
         """Utility method for performing HTTP call to Salesforce.
 
         Returns a `requests.result` object.
@@ -835,7 +851,9 @@ class AsyncSalesforce:
         return result
 
     # file-based deployment function
-    async def deploy(self, zipfile: str | IO[bytes], sandbox: bool, **kwargs: Any) -> Dict[str, Optional[str]]:
+    async def deploy(
+        self, zipfile: str | Path, sandbox: bool, **kwargs: Any
+    ) -> Dict[str, Optional[str]]:
         """Deploy using the Salesforce Metadata API. Wrapper for
         SfdcMetaDataApi.deploy(...).
 
@@ -855,7 +873,9 @@ class AsyncSalesforce:
 
     # check on a file-based deployment
     @async_retry_expired_session
-    async def checkDeployStatus(self, asyncId: str, **kwargs: Any) -> Dict[str, None | str | Mapping[str, str]]:
+    async def checkDeployStatus(
+        self, asyncId: str, **kwargs: Any
+    ) -> Dict[str, None | str | Mapping[str, str]]:
         """Check on the progress of a file-based deployment via Salesforce
         Metadata API.
         Wrapper for SfdcMetaDataApi.check_deploy_status(...).
@@ -940,10 +960,9 @@ class AsyncSFType:
         self._session_id = session_id
         self.salesforce = salesforce
         self.name = object_name
-        self.session_factory = session_factory
         self._proxies = proxies
         self._parse_float = parse_float
-        self._object_pairs_hook = object_pairs_hook
+        self._object_pairs_hook = object_pairs_hook  # type: ignore[assignment]
         self.request_timeout_seconds = request_timeout_seconds
 
         if session is not None:
@@ -956,19 +975,21 @@ class AsyncSFType:
                 "ignoring proxies: %s",
                 proxies,
             )
+        # make sure session_factory is not None
         # override custom session proxies dance
         if (
-            not self.session_factory
+            not session_factory
             and self.salesforce
-            and self.salesforce.session_factory
+            and self.salesforce.session_factory is not None
         ):
-            self.session_factory = self.salesforce.session_factory
-        elif not self.session_factory:
-            self.session_factory = create_session_factory(
+            session_factory = self.salesforce.session_factory
+        elif not session_factory:
+            session_factory = create_session_factory(
                 proxies=self._proxies, timeout=self.request_timeout_seconds
             )
+        self.session_factory = session_factory
 
-        self.api_usage = {}
+        self.api_usage: MutableMapping[str, Usage | PerAppUsage] = {}
         self.base_url = (
             f"https://{sf_instance}/services/data/v{sf_version}/sobjects"
             f"/{object_name}/"
@@ -1005,7 +1026,7 @@ class AsyncSFType:
         result = await self._call_salesforce("GET", self.base_url, headers=headers)
         return self.parse_result_to_json(result)
 
-    async def describe(self, headers=None):
+    async def describe(self, headers: Optional[Headers] = None) -> Any:
         """Returns the result of a GET to `.../{object_name}/describe` as a
         dict decoded from the JSON payload returned by Salesforce.
 
@@ -1018,7 +1039,9 @@ class AsyncSFType:
         )
         return self.parse_result_to_json(result)
 
-    async def describe_layout(self, record_id, headers=None):
+    async def describe_layout(
+        self, record_id: str, headers: Optional[Headers] = None
+    ) -> Any:
         """Returns the layout of the object
 
         Returns the result of a GET to
@@ -1036,7 +1059,9 @@ class AsyncSFType:
         )
         return self.parse_result_to_json(result)
 
-    async def get(self, record_id, headers=None, **kwargs):
+    async def get(
+        self, record_id: str, headers: Optional[Headers] = None, **kwargs: Any
+    ) -> Any:
         """Returns the result of a GET to `.../{object_name}/{record_id}` as a
         dict decoded from the JSON payload returned by Salesforce.
 
@@ -1053,7 +1078,9 @@ class AsyncSFType:
         )
         return self.parse_result_to_json(result)
 
-    async def get_by_custom_id(self, custom_id_field, custom_id, headers=None):
+    async def get_by_custom_id(
+        self, custom_id_field: str, custom_id: str, headers: Optional[Headers] = None
+    ) -> Any:
         """Return an ``AsyncSFType`` by custom ID
 
         Returns the result of a GET to
@@ -1073,7 +1100,9 @@ class AsyncSFType:
         )
         return self.parse_result_to_json(result)
 
-    async def create(self, data, headers=None):
+    async def create(
+        self, data: Mapping[str, Any], headers: Optional[Headers] = None
+    ) -> Any:
         """Creates a new SObject using a POST to `.../{object_name}/`.
 
         Returns a dict decoded from the JSON payload returned by Salesforce.
@@ -1085,11 +1114,17 @@ class AsyncSFType:
         * headers -- a dict with additional request headers.
         """
         result = await self._call_salesforce(
-            method="POST", url=self.base_url, data=json.dumps(data), headers=headers
+            method="POST", url=self.base_url, content=json.dumps(data), headers=headers
         )
         return self.parse_result_to_json(result)
 
-    async def upsert(self, record_id, data, raw_response=False, headers=None):
+    async def upsert(
+        self,
+        record_id: str,
+        data: Mapping[str, Any],
+        raw_response: bool = False,
+        headers: Optional[Headers] = None,
+    ) -> int | httpx.Response:
         """Creates or updates an SObject using a PATCH to
         `.../{object_name}/{record_id}`.
 
@@ -1110,12 +1145,18 @@ class AsyncSFType:
         result = await self._call_salesforce(
             method="PATCH",
             url=urljoin(self.base_url, record_id),
-            data=json.dumps(data),
+            content=json.dumps(data),
             headers=headers,
         )
         return self._raw_response(result, raw_response)
 
-    async def update(self, record_id, data, raw_response=False, headers=None):
+    async def update(
+        self,
+        record_id: str,
+        data: Mapping[str, Any],
+        raw_response: bool = False,
+        headers: Optional[Headers] = None,
+    ) -> int | httpx.Response:
         """Updates an SObject using a PATCH to
         `.../{object_name}/{record_id}`.
 
@@ -1135,12 +1176,17 @@ class AsyncSFType:
         result = await self._call_salesforce(
             method="PATCH",
             url=urljoin(self.base_url, record_id),
-            data=json.dumps(data),
+            content=json.dumps(data),
             headers=headers,
         )
         return self._raw_response(result, raw_response)
 
-    async def delete(self, record_id, raw_response=False, headers=None):
+    async def delete(
+        self,
+        record_id: str,
+        raw_response: bool = False,
+        headers: Optional[Headers] = None,
+    ) -> int | httpx.Response:
         """Deletes an SObject using a DELETE to
         `.../{object_name}/{record_id}`.
 
@@ -1160,7 +1206,9 @@ class AsyncSFType:
         )
         return self._raw_response(result, raw_response)
 
-    async def deleted(self, start, end, headers=None):
+    async def deleted(
+        self, start: datetime, end: datetime, headers: Optional[Headers] = None
+    ) -> Any:
         # pylint: disable=line-too-long
         """Gets a list of deleted records
 
@@ -1180,7 +1228,9 @@ class AsyncSFType:
         result = await self._call_salesforce(method="GET", url=url, headers=headers)
         return self.parse_result_to_json(result)
 
-    async def updated(self, start, end, headers=None):
+    async def updated(
+        self, start: datetime, end: datetime, headers: Optional[Headers] = None
+    ) -> Any:
         # pylint: disable=line-too-long
         """Gets a list of updated records
 
@@ -1202,18 +1252,21 @@ class AsyncSFType:
         return self.parse_result_to_json(result)
 
     @async_retry_expired_session
-    async def _call_salesforce(self, method, url, **kwargs):
+    async def _call_salesforce(
+        self, method: str, url: str, **kwargs: Any
+    ) -> httpx.Response:
         """Utility method for performing HTTP call to Salesforce.
 
         Returns a `requests.result` object.
         """
         headers = {
             "Content-Type": "application/json",
-            "Authorization": "Bearer " + self.session_id,
+            "Authorization": "Bearer " + (self.session_id or ""),
             "X-PrettyPrint": "1",
         }
         additional_headers = kwargs.pop("headers", dict())
         headers.update(additional_headers or dict())
+
         async with self.session_factory() as client:
             result = await client.request(method, url, headers=headers, **kwargs)
 
@@ -1226,7 +1279,9 @@ class AsyncSFType:
         return result
 
     # pylint: disable=no-self-use
-    def _raw_response(self, response, body_flag):
+    def _raw_response(
+        self, response: httpx.Response, body_flag: bool
+    ) -> int | httpx.Response:
         """Utility method for processing the response and returning either the
         status code or the response object.
 
@@ -1244,15 +1299,19 @@ class AsyncSFType:
         )
 
     async def upload_base64(
-        self, file_path, base64_field="Body", headers=None, **kwargs
-    ):
+        self,
+        file_path: str,
+        base64_field: str = "Body",
+        headers: Optional[Headers] = None,
+        **kwargs: Any,
+    ) -> httpx.Response:
         """Upload base64 encoded file to Salesforce"""
         data = {}
         async with aiofiles.open(file_path, "rb") as fl:
             content = await fl.read()
             body = base64.b64encode(content).decode("utf-8")
         data[base64_field] = body
-        result = await self._call_salesforce(
+        result: httpx.Response = await self._call_salesforce(
             method="POST", url=self.base_url, headers=headers, json=data, **kwargs
         )
 
@@ -1260,13 +1319,13 @@ class AsyncSFType:
 
     async def update_base64(
         self,
-        record_id,
-        file_path,
-        base64_field="Body",
-        headers=None,
-        raw_response=False,
-        **kwargs,
-    ):
+        record_id: str,
+        file_path: str,
+        base64_field: str = "Body",
+        headers: Optional[Headers] = None,
+        raw_response: bool = False,
+        **kwargs: Any,
+    ) -> int | httpx.Response:
         """Updated base64 image from file to Salesforce"""
         data = {}
         async with aiofiles.open(file_path, "rb") as fl:
@@ -1284,8 +1343,13 @@ class AsyncSFType:
         return self._raw_response(result, raw_response)
 
     async def get_base64(
-        self, record_id, base64_field="Body", data=None, headers=None, **kwargs
-    ):
+        self,
+        record_id: str,
+        base64_field: str = "Body",
+        data: Optional[Mapping[str, Any]] = None,
+        headers: Optional[Headers] = None,
+        **kwargs: Any,
+    ) -> bytes:
         """Returns binary stream of base64 object at specific path.
 
         Arguments:
@@ -1294,7 +1358,7 @@ class AsyncSFType:
             Example: sobjects/Attachment/ABC123/Body
                      sobjects/ContentVersion/ABC123/VersionData
         """
-        result = await self._call_salesforce(
+        result: httpx.Response = await self._call_salesforce(
             method="GET",
             url=urljoin(self.base_url, f"{record_id}/{base64_field}"),
             data=data,
