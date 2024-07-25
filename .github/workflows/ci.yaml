@@ -35,3 +35,5 @@ jobs:
         run: "poetry install --no-root"
       - name: "Run tests"
         run: "poetry run pytest"
+      - name: "Run mypy"
+        run: "poetry run mypy simple_salesforce/aio"
