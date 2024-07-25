@@ -547,31 +547,23 @@ class AsyncSfdcMetadataApi:
         print("response: %s" % ET.tostring(result, encoding="us-ascii", method="xml"))
 
     async def retrieve(
-        self, async_process_id: str, **kwargs: Any
+        self, async_process_id: str, single_package: bool = True, **kwargs: Any
     ) -> Tuple[Optional[str], Optional[str]]:
         """Submits retrieve request"""
         # Compose unpackaged XML
         client = kwargs.get("client", "simple_salesforce_metahelper")
-        single_package = kwargs.get("single_package", True)
-
-        if not isinstance(single_package, bool):
-            raise TypeError("single_package must be bool")
 
         unpackaged = ""
-        if kwargs.get("unpackaged"):
-            for metadata_type in kwargs.get("unpackaged"):
-                if isinstance(kwargs.get("unpackaged"), dict):
-                    members = kwargs.get("unpackaged")[metadata_type]
+        if unpackaged_param := kwargs.get("unpackaged", {}):
+            if isinstance(unpackaged_param, dict):
+                for metadata_type in unpackaged_param:
                     unpackaged += "<types>"
+                    members = unpackaged_param[metadata_type]
                     for member in members:
-                        unpackaged += "<members>{member}</members>".format(
-                            member=member
-                        )
-                    unpackaged += "<name>{metadata_type}</name></types>".format(
-                        metadata_type=metadata_type
-                    )
-                else:
-                    raise TypeError("unpackaged metadata types must be a dict")
+                        unpackaged += f"<members>{member}</members>"
+                    unpackaged += f"<name>{metadata_type}</name></types>"
+            else:
+                raise TypeError("unpackaged metadata types must be a dict")
 
         # Compose retrieve request XML
         attributes = {
@@ -661,7 +653,7 @@ class AsyncSfdcMetadataApi:
 
         # Retrieve base64 encoded ZIP file
         zipfile_base64 = find_element_text(result, "mt:zipFile", self._XML_NAMESPACES, default="")
-        zipfile = b64decode(zipfile_base64)  # type: ignore[arg-type]
+        zipfile = b64decode(zipfile_base64)
 
         return state, error_message, messages, zipfile
 
@@ -692,8 +684,8 @@ class AsyncSfdcMetadataApi:
 # # # # # Helpers # # # # #
 # # # # # # # # # # # # # #
 def find_element_text(
-    element: Element | None, path: str, *args, default=None
-) -> str | None:
+    element: Element | None, path: str, *args: Any, default: Any = None
+) -> str | Any:
     """Returns the text of an element or `default`"""
     if element is None:
         return default
