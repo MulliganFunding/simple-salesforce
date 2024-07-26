@@ -85,7 +85,7 @@ def exception_handler(result: httpx.Response, name: str = "") -> NoReturn:
 
 
 async def alist_from_generator(
-        generator_function: AsyncIterable[AsyncIterable[T]]
+        generator_function: AsyncIterable[List[T]]
 ) -> List[T]:
     """Utility method for constructing a list from a generator function"""
     ret_val: List[T] = []
