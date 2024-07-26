@@ -38,7 +38,7 @@ setup(
         'pytz>=2014.1.1',
         'responses>=0.5.1',
         ],
-    test_suite='simple_salesforce.tests',
+    test_suite='tests',
     keywords=about['__keywords__'],
     classifiers=[
         'Development Status :: 5 - Production/Stable',

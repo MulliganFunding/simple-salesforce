@@ -1,7 +1,7 @@
 """Utility functions for simple-salesforce async calls"""
 
 from functools import partial
-from typing import Any, Callable, NoReturn, Optional
+from typing import Any, AsyncIterable, Callable, List, NoReturn, Optional, TypeVar
 
 import httpx
 
@@ -14,6 +14,9 @@ from simple_salesforce.exceptions import (
     SalesforceResourceNotFound,
 )
 from simple_salesforce.util import Headers, Proxies
+
+
+T = TypeVar('T')
 
 
 def create_session_factory(
@@ -79,3 +82,13 @@ def exception_handler(result: httpx.Response, name: str = "") -> NoReturn:
     exc_cls = exc_map.get(result.status_code, SalesforceGeneralError)
 
     raise exc_cls(str(result.url), result.status_code, name, response_content)
+
+
+async def alist_from_generator(
+        generator_function: AsyncIterable[AsyncIterable[T]]
+) -> List[T]:
+    """Utility method for constructing a list from a generator function"""
+    ret_val: List[T] = []
+    async for list_results in generator_function:
+        ret_val.extend(list_results)
+    return ret_val

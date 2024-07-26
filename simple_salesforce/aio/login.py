@@ -13,7 +13,7 @@ import warnings
 
 import jwt
 import httpx
-from httpx import Headers, URL, Proxy
+from httpx import Headers
 
 from simple_salesforce.api import DEFAULT_API_VERSION
 from simple_salesforce.login import DEFAULT_CLIENT_ID_PREFIX

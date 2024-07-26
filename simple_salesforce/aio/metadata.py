@@ -2,7 +2,7 @@
 
 from base64 import b64encode, b64decode
 from pathlib import Path
-from typing import Any, Callable, Dict, IO, List, Mapping, Optional, Tuple
+from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple
 from xml.etree import ElementTree as ET
 from xml.etree.ElementTree import Element
 
