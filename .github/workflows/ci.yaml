@@ -61,7 +61,7 @@ jobs:
           hide_complexity: true
           indicators: true
           output: both
-          thresholds: '60 80'
+          thresholds: '70 80'
 
       - name: Add Coverage PR Comment
         if: matrix.python-version == 3.11
