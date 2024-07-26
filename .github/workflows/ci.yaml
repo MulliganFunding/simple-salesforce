@@ -9,7 +9,6 @@ on:
       - '*.md'
       - '*.rst'
 
-
 jobs:
   tests:
     env:
@@ -51,6 +50,7 @@ jobs:
 
       # Publish code coverage results
       - name: Code Coverage Report
+        if: matrix.python-version == 3.11
         uses: irongut/CodeCoverageSummary@v1.3.0
         with:
           filename: coverage.xml
@@ -64,6 +64,7 @@ jobs:
           thresholds: '60 80'
 
       - name: Add Coverage PR Comment
+        if: matrix.python-version == 3.11
         uses: marocchino/sticky-pull-request-comment@v2
         with:
           recreate: true
@@ -71,7 +72,7 @@ jobs:
 
       # Publish junit test result
       - name: Publish Test Report
-        if: always()  # always run even if the previous step fails
+        if: matrix.python-version == 3.11 && always()  # always run even if the previous step fails
         uses: mikepenz/action-junit-report@v4
         with:
           report_paths: ${{ format('/tmp/coverage/{0}/*junit.xml', github.run_id) }}
