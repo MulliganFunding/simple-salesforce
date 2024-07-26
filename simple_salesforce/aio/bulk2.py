@@ -39,7 +39,7 @@ from simple_salesforce.bulk2 import (
     DEFAULT_QUERY_PAGE_SIZE,
 )
 from simple_salesforce.util import Proxies
-from .aio_util import call_salesforce, create_session_factory
+from .aio_util import call_salesforce
 
 
 # pylint: disable=missing-class-docstring,invalid-name,too-many-arguments,
@@ -674,8 +674,8 @@ class AsyncSFBulk2Type:
             csv_file=csv_file,
             records=_convert_dict_to_csv(
                 records,
-                column_delimiter=_delimiter_char.get(column_delimiter),
-                line_ending=_line_ending_char.get(line_ending),
+                column_delimiter=_delimiter_char.get(column_delimiter, ","),
+                line_ending=_line_ending_char.get(line_ending, "\n"),
             ),
             batch_size=batch_size,
             column_delimiter=column_delimiter,
@@ -699,8 +699,8 @@ class AsyncSFBulk2Type:
             csv_file=csv_file,
             records=_convert_dict_to_csv(
                 records,
-                column_delimiter=_delimiter_char.get(column_delimiter),
-                line_ending=_line_ending_char.get(line_ending),
+                column_delimiter=_delimiter_char.get(column_delimiter, ","),
+                line_ending=_line_ending_char.get(line_ending, "\n"),
             ),
             batch_size=batch_size,
             column_delimiter=column_delimiter,
@@ -724,8 +724,8 @@ class AsyncSFBulk2Type:
             csv_file=csv_file,
             records=_convert_dict_to_csv(
                 records,
-                column_delimiter=_delimiter_char.get(column_delimiter),
-                line_ending=_line_ending_char.get(line_ending),
+                column_delimiter=_delimiter_char.get(column_delimiter, ","),
+                line_ending=_line_ending_char.get(line_ending, "\n"),
             ),
             batch_size=batch_size,
             column_delimiter=column_delimiter,
@@ -749,8 +749,8 @@ class AsyncSFBulk2Type:
             csv_file=csv_file,
             records=_convert_dict_to_csv(
                 records,
-                column_delimiter=_delimiter_char.get(column_delimiter),
-                line_ending=_line_ending_char.get(line_ending),
+                column_delimiter=_delimiter_char.get(column_delimiter, ","),
+                line_ending=_line_ending_char.get(line_ending, "\n"),
             ),
             batch_size=batch_size,
             column_delimiter=column_delimiter,
@@ -773,8 +773,8 @@ class AsyncSFBulk2Type:
             csv_file=csv_file,
             records=_convert_dict_to_csv(
                 records,
-                column_delimiter=_delimiter_char.get(column_delimiter),
-                line_ending=_line_ending_char.get(line_ending),
+                column_delimiter=_delimiter_char.get(column_delimiter, ","),
+                line_ending=_line_ending_char.get(line_ending, "\n"),
             ),
             batch_size=batch_size,
             column_delimiter=column_delimiter,
@@ -950,21 +950,30 @@ class AsyncSFBulk2Type:
             self.get_failed_records(job_id=job_id, file=file),
             self.get_unprocessed_records(job_id=job_id, file=file),
         )
-        successful_records = csv.DictReader(
-            successful.splitlines(),
-            delimiter=",",
-            lineterminator="\n",
-        )
-        failed_records = csv.DictReader(
-            failed.splitlines(),
-            delimiter=",",
-            lineterminator="\n",
-        )
-        unprocessed_records = csv.DictReader(
-            unprocessed.splitlines(),
-            delimiter=",",
-            lineterminator="\n",
-        )
+        if successful is not None:
+            successful_records = csv.DictReader(
+                successful.splitlines(),
+                delimiter=",",
+                lineterminator="\n",
+            )
+        else:
+            successful_records = []
+        if failed is not None:
+            failed_records = csv.DictReader(
+                failed.splitlines(),
+                delimiter=",",
+                lineterminator="\n",
+            )
+        else:
+            failed_records = []
+        if unprocessed is not None:
+            unprocessed_records = csv.DictReader(
+                unprocessed.splitlines(),
+                delimiter=",",
+                lineterminator="\n",
+            )
+        else:
+            unprocessed_records = []
         return {
             "successfulRecords": list(successful_records),
             "failedRecords": list(failed_records),
