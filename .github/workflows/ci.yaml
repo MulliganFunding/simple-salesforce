@@ -50,7 +50,7 @@ jobs:
 
       # Publish code coverage results
       - name: Code Coverage Report
-        if: ${{ matrix.python-version == '3.11' }}
+        if: ${{ matrix.python-version == '3.11' && matrix.os == 'ubuntu-latest' }}
         uses: irongut/CodeCoverageSummary@v1.3.0
         with:
           filename: coverage.xml
@@ -64,7 +64,7 @@ jobs:
           thresholds: '70 80'
 
       - name: Add Coverage PR Comment
-        if: ${{ matrix.python-version == '3.11' }}
+        if: ${{ matrix.python-version == '3.11' && matrix.os == 'ubuntu-latest' }}
         uses: marocchino/sticky-pull-request-comment@v2
         with:
           recreate: true
@@ -72,7 +72,7 @@ jobs:
 
       # Publish junit test result
       - name: Publish Test Report
-        if: ${{ matrix.python-version == '3.11' }}
+        if: ${{ matrix.python-version == '3.11' && matrix.os == 'ubuntu-latest' }}
         uses: mikepenz/action-junit-report@v4
         with:
           report_paths: ${{ format('/tmp/coverage/{0}/*junit.xml', github.run_id) }}
