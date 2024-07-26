@@ -6,12 +6,11 @@ import csv
 import http.client as http
 import json
 import os
-from pathlib import Path
 import re
 import sys
 from collections import OrderedDict
-from typing import Any, AnyStr, AsyncIterator, Callable, Dict, Tuple, Union, List
-from typing_extensions import Literal, NotRequired, TypedDict
+from typing import Any, AnyStr, AsyncIterator, Callable, Dict, Tuple, List
+from typing_extensions import Literal
 
 import aiofiles
 import httpx
