@@ -10,10 +10,11 @@ from pathlib import Path
 import re
 import sys
 from collections import OrderedDict
-from typing import Dict, Tuple, Union, List
+from typing import Any, Callable, Dict, Tuple, Union, List
 
 import aiofiles
 import httpx
+from httpx import Headers
 import math
 import pendulum
 from pendulum import DateTime
@@ -35,6 +36,7 @@ from simple_salesforce.bulk2 import (
     MAX_INGEST_JOB_FILE_SIZE,
     DEFAULT_QUERY_PAGE_SIZE,
 )
+from simple_salesforce.util import Proxies
 from .aio_util import call_salesforce, create_session_factory
 
 
@@ -42,7 +44,7 @@ from .aio_util import call_salesforce, create_session_factory
 # too-many-locals
 
 
-async def _split_csv(filename=None, records=None, max_records: int = None):
+async def _split_csv(filename: str | None = None, records: str | None = None, max_records: int | None = None):
     """Split a CSV file into chunks to avoid exceeding the Salesforce
     bulk 2.0 API limits.
 
@@ -102,7 +104,7 @@ async def _split_csv(filename=None, records=None, max_records: int = None):
 
 
 async def _count_csv(
-    filename=None, data=None, skip_header=False, line_ending=LineEnding.LF
+    filename: str | None = None, data: str | None = None, skip_header: bool = False, line_ending: LineEnding = LineEnding.LF
 ):
     """Count the number of records in a CSV file."""
     if filename:
@@ -129,7 +131,7 @@ class AsyncSFBulk2Handler:
     to allow the above syntax
     """
 
-    def __init__(self, session_id, bulk2_url, proxies, session_factory):
+    def __init__(self, session_id: str, bulk2_url: str, proxies: Proxies | None, session_factory: Callable[[], httpx.AsyncClient]):
         """Initialize the instance with the given parameters.
 
         Arguments:
@@ -156,7 +158,7 @@ class AsyncSFBulk2Handler:
             "X-PrettyPrint": "1",
         }
 
-    def __getattr__(self, name):
+    def __getattr__(self, name: str) -> "AsyncSFBulk2Type":
         return AsyncSFBulk2Type(
             object_name=name,
             bulk2_url=self.bulk2_url,
@@ -174,7 +176,7 @@ class _AsyncBulk2Client:
     DEFAULT_WAIT_TIMEOUT_SECONDS = 86400  # 24-hour bulk job running time
     MAX_CHECK_INTERVAL_SECONDS = 2.0
 
-    def __init__(self, object_name, bulk2_url, headers, session_factory):
+    def __init__(self, object_name: str, bulk2_url: str, headers: Headers, session_factory: Callable[[], httpx.AsyncClient]):
         """
         Arguments:
 
@@ -191,14 +193,14 @@ class _AsyncBulk2Client:
         self.session_factory = session_factory
         self.headers = headers
 
-    def _get_headers(self, request_content_type=None, accept_content_type=None):
+    def _get_headers(self, request_content_type: str | None = None, accept_content_type: str | None = None) -> Headers:
         """Get headers for bulk 2.0 API request"""
         headers = copy.deepcopy(self.headers)
         headers["Content-Type"] = request_content_type or self.JSON_CONTENT_TYPE
         headers["ACCEPT"] = accept_content_type or self.JSON_CONTENT_TYPE
-        return headers
+        return Headers(headers)
 
-    def _construct_request_url(self, job_id, is_query: bool):
+    def _construct_request_url(self, job_id: str, is_query: bool) -> str:
         """Construct bulk 2.0 API request URL"""
         if not job_id:
             job_id = ""
@@ -212,12 +214,12 @@ class _AsyncBulk2Client:
 
     async def create_job(
         self,
-        operation,
-        query=None,
-        column_delimiter=ColumnDelimiter.COMMA,
-        line_ending=LineEnding.LF,
-        external_id_field=None,
-    ):
+        operation: Operation,
+        query: str | None = None,
+        column_delimiter: ColumnDelimiter = ColumnDelimiter.COMMA,
+        line_ending: LineEnding = LineEnding.LF,
+        external_id_field: str | None = None,
+    ) -> Any:
         """Create job
 
         Arguments:
