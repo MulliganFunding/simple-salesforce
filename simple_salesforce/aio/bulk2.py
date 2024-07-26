@@ -10,7 +10,8 @@ from pathlib import Path
 import re
 import sys
 from collections import OrderedDict
-from typing import Any, Callable, Dict, Tuple, Union, List
+from typing import Any, AnyStr, Callable, Dict, Tuple, Union, List
+from typing_extensions import Literal, NotRequired, TypedDict
 
 import aiofiles
 import httpx
@@ -30,6 +31,7 @@ from simple_salesforce.bulk2 import (
     ColumnDelimiter,
     LineEnding,
     ResultsType,
+    QueryResult,
     _convert_dict_to_csv,  # Dedupe from upstream
     _delimiter_char,  # Dedupe from upstream
     _line_ending_char,  # Dedupe from upstream
@@ -258,7 +260,7 @@ class _AsyncBulk2Client:
         )
         return result.json(object_pairs_hook=OrderedDict)
 
-    async def wait_for_job(self, job_id, is_query: bool, wait=0.5):
+    async def wait_for_job(self, job_id: str, is_query: bool, wait: float = 0.5)  -> Literal[JobState.job_complete]:
         """Wait for job completion or timeout"""
         expiration_time: DateTime = pendulum.now().add(
             seconds=self.DEFAULT_WAIT_TIMEOUT_SECONDS
@@ -288,15 +290,15 @@ class _AsyncBulk2Client:
             await asyncio.sleep(delay_timeout)
         raise SalesforceOperationError(f"Job timeout. Job status: {job_status}")
 
-    async def abort_job(self, job_id, is_query: bool):
+    async def abort_job(self, job_id: str, is_query: bool) -> Any:
         """Abort query/ingest job"""
         return await self._set_job_state(job_id, is_query, JobState.aborted)
 
-    async def close_job(self, job_id):
+    async def close_job(self, job_id: str) -> Any:
         """Close ingest job"""
         return await self._set_job_state(job_id, False, JobState.upload_complete)
 
-    async def delete_job(self, job_id, is_query: bool):
+    async def delete_job(self, job_id: str, is_query: bool) -> Any:
         """Delete query/ingest job"""
         url = self._construct_request_url(job_id, is_query)
         headers = self._get_headers()
@@ -308,7 +310,7 @@ class _AsyncBulk2Client:
         )
         return result.json(object_pairs_hook=OrderedDict)
 
-    async def _set_job_state(self, job_id, is_query: bool, state: str):
+    async def _set_job_state(self, job_id: str, is_query: bool, state: str) -> Any:
         """Set job state"""
         url = self._construct_request_url(job_id, is_query)
         headers = self._get_headers()
@@ -322,7 +324,7 @@ class _AsyncBulk2Client:
         )
         return result.json(object_pairs_hook=OrderedDict)
 
-    async def get_job(self, job_id, is_query: bool):
+    async def get_job(self, job_id: str, is_query: bool) -> Any:
         """Get job info"""
         url = self._construct_request_url(job_id, is_query)
 
@@ -334,7 +336,7 @@ class _AsyncBulk2Client:
         )
         return result.json(object_pairs_hook=OrderedDict)
 
-    def filter_null_bytes(self, b: Union[str, bytes]):
+    def filter_null_bytes(self, b: AnyStr) -> AnyStr:
         """
         https://github.com/airbytehq/airbyte/issues/8300
         """
@@ -345,8 +347,8 @@ class _AsyncBulk2Client:
         raise TypeError("Expected str or bytes")
 
     async def get_query_results(
-        self, job_id, locator: str = "", max_records=DEFAULT_QUERY_PAGE_SIZE
-    ):
+        self, job_id: str, locator: str = "", max_records: int = DEFAULT_QUERY_PAGE_SIZE
+    ) -> QueryResult:
         """Get results for a query job"""
         url = self._construct_request_url(job_id, True) + "/results"
         params = {"maxRecords": max_records}
@@ -373,11 +375,11 @@ class _AsyncBulk2Client:
     async def download_job_data(
         self,
         path: str | Path,
-        job_id,
+        job_id: str,
         locator: str = "",
-        max_records=DEFAULT_QUERY_PAGE_SIZE,
-        chunk_size=1024,
-    ):
+        max_records: int = DEFAULT_QUERY_PAGE_SIZE,
+        chunk_size: int = 1024,
+    ) -> QueryResult:
         """Get results for a query job"""
         if not os.path.exists(path):
             raise SalesforceBulkV2LoadError(f"Path does not exist: {path}")
@@ -422,7 +424,7 @@ class _AsyncBulk2Client:
                 f"File {bos.name} doesn't exist, url: {url}, "
             )
 
-    async def upload_job_data(self, job_id, data: str, content_url=None):
+    async def upload_job_data(self, job_id: str, data: str, content_url: str | None = None) -> None:
         """Upload job data"""
         if not data:
             raise SalesforceBulkV2LoadError("Data is required for ingest jobs")
@@ -451,7 +453,7 @@ class _AsyncBulk2Client:
                 f"Response content: {result.content}"
             )
 
-    async def get_ingest_results(self, job_id, results_type):
+    async def get_ingest_results(self, job_id: str, results_type: str) -> str:
         """Get record results"""
         url = self._construct_request_url(job_id, False) + "/" + results_type
         headers = self._get_headers(self.JSON_CONTENT_TYPE, self.CSV_CONTENT_TYPE)
@@ -461,18 +463,28 @@ class _AsyncBulk2Client:
         return result.text
 
     async def download_ingest_results(
-        self, file, job_id, results_type, chunk_size=1024
-    ):
+        self, file: str | Path, job_id: str, results_type: str, chunk_size: int = 1024
+    ) -> None:
         """Download record results to a file"""
         url = self._construct_request_url(job_id, False) + "/" + results_type
         headers = self._get_headers(self.JSON_CONTENT_TYPE, self.CSV_CONTENT_TYPE)
-        result = await call_salesforce(
-            url=url, method="GET", session_factory=self.session_factory, headers=headers
-        )
+
+        # Pull results: because we are streaming, we need to use a session
+        if self.session_factory:
+            client = self.session_factory()
+        else:
+            client = httpx.AsyncClient()
 
         async with aiofiles.open(file, "wb") as bos:
-            for data in result.iter_bytes(chunk_size=chunk_size):
-                await bos.write(self.filter_null_bytes(data))
+            async with client.stream(
+                "GET", url, headers=headers,
+            ) as response:
+                locator = response.headers.get("Sforce-Locator", "")
+                if locator == "null":
+                    locator = ""
+
+                async for chunk in response.aiter_bytes(chunk_size=chunk_size):
+                    await bos.write(self.filter_null_bytes(chunk))
 
         if not os.path.exists(file):
             raise SalesforceBulkV2LoadError(
