@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
+    xmlns="http://soap.sforce.com/2006/04/metadata"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+    <soapenv:Body>
+        <createMetadataResponse>
+            <result>
+                <id>001U0000016oRZVIA2</id>
+                <success>true</success>
+              </result>
+        </createMetadataResponse>
+    </soapenv:Body>
+</soapenv:Envelope>

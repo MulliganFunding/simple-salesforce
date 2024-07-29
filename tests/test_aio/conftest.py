@@ -1,9 +1,12 @@
 """
 Common fixtures for tests in this directory
 """
+import os
+import pathlib
 import re
 from unittest import mock
 
+import aiofiles
 import pytest
 
 from simple_salesforce.aio import AsyncSalesforce
@@ -134,6 +137,24 @@ ALL_CONSTANTS = {
     },
 }
 
+test_dir = os.path.dirname(__file__)
+fixtures = pathlib.Path(test_dir) / "fixtures"
+
+
+@pytest.fixture()
+def fixtures_dir():
+    """should be a ./fixtures dir in same directory as this conftest.py"""
+    return fixtures
+
+
+@pytest.fixture()
+def fixture_loader(fixtures_dir):
+    """Build a function to load an XML fixture"""
+    async def loader(fixture_name):
+        async with aiofiles.open(str(fixtures_dir / fixture_name), "r") as fixture:
+            return await fixture.read()
+    return loader
+
 
 @pytest.fixture()
 def constants():
@@ -165,14 +186,19 @@ TEST_DOMAIN = "https://testdomain.my.salesforce.com"
 SOAP_URL = "https://login.salesforce.com/services/Soap/u/"
 OAUTH_TOKEN_URL = "https://login.salesforce.com/services/oauth2/token"
 
+
 # Regex patterns for matching URLs
 OATH_TOKEN_URL_PAT = re.compile(r"https://login\.salesforce\.com/services/oauth2/token/?.*")
-SOAP_URL_PAT = re.compile(r"https://login\.salesforce\.com/services/Soap/u/?.*")
+SOAP_URL_PAT = re.compile(r"https://login\.salesforce\.com/services/Soap/[u|m]/?.*")
 TEST_DOMAIN_PAT = re.compile(r"https://testdomain\.my.*")
+SOAP_SERVER_URL_PAT = re.compile(r"https://na15\.salesforce\.com.*")
+
 
 @pytest.fixture()
 def urls():
     return {
+        "metadata_url": METADATA_URL,
+        "soap_server_url": SOAP_SERVER_URL_PAT,
         "soap_url": SOAP_URL,
         "oauth_token_url": OAUTH_TOKEN_URL,
         "soap_url_pat": SOAP_URL_PAT,

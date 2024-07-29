@@ -9,8 +9,9 @@ from xml.etree.ElementTree import Element
 import aiofiles
 import httpx
 from zeep import AsyncClient, Settings
-from zeep.proxy import ServiceProxy
+from zeep.proxy import AsyncServiceProxy
 from zeep.xsd import AnySimpleType, ComplexType, CompoundValue
+
 
 from simple_salesforce.messages import (
     DEPLOY_MSG,
@@ -30,7 +31,7 @@ class AsyncMetadataType:
     def __init__(
         self,
         name: str,
-        service: ServiceProxy,
+        service: AsyncServiceProxy,
         zeep_type: ComplexType | AnySimpleType,
         session_header: CompoundValue,
     ):
@@ -40,7 +41,7 @@ class AsyncMetadataType:
         :param name: Name of metadata type
         :type name: str
         :param service: Zeep service
-        :type service: zeep.proxy.ServiceProxy
+        :type service: zeep.proxy.AsyncServiceProxy
         :param zeep_type: Zeep type object
         :type zeep_type: zeep.xsd.ComplexType or zeep.xsd.AnySimpleType
         :param session_header: Session Id header for Metadata API calls
@@ -235,44 +236,28 @@ class AsyncSfdcMetadataApi:
         self.session_factory = session_factory
 
         wsdl_path = Path(__file__).parent.parent / "metadata.wsdl"
+
+        # The zeep client synchronously loads the wsdl file
         self._client = AsyncClient(
             str(wsdl_path.absolute()),
             settings=Settings(strict=False, xsd_ignore_sequence_order=True),
         )  # type: ignore[no-untyped-call]
-        self._service: ServiceProxy | None = None
-        self._session_header: Element | None = None
-
-    @property
-    def service(self) -> ServiceProxy:
-        if self._service is None:
-            raise ValueError("Service must be initialized; call `start_session()`")
-        return self._service
-
-    @property
-    def session_header(self) -> Element:
-        if self._session_header is None:
-            raise ValueError("Service must be initialized; call `start_session()`")
-        return self._session_header
-
-    async def start_session(self) -> None:
-        if self._service is None:
-            self._service = await self._client.create_service(
-                "{http://soap.sforce.com/2006/04/metadata}MetadataBinding",
-                self.metadata_url,
-            )  # type: ignore[no-untyped-call]
-        if self._session_header is None:
-            self._session_header = await self._client.get_element(
-                "ns0:SessionHeader"  # type: ignore[no-untyped-call]
-            )(sessionId=self._session_id)
+        # Odd that we can't create this easily from zeep itself
+        self._service: AsyncServiceProxy = AsyncServiceProxy(
+            self._client,
+            self._client.service._binding,
+            address=self.metadata_url,
+        )  # type: ignore[no-untyped-call]
+        self._session_header: Element = self._client.get_element(
+            "ns0:SessionHeader"  # type: ignore[no-untyped-call]
+        )(sessionId=self._session_id)
 
     def __getattr__(self, item: str) -> "AsyncMetadataType":
-        if self._service is None or self._session_header is None:
-            raise ValueError("AsyncMetadataType must be called after `start_session()`")
         return AsyncMetadataType(
             item,
-            self.service,
+            self._service,
             self._client.get_type("ns0:" + item),  # type: ignore[no-untyped-call]
-            self.session_header,
+            self._session_header,
         )
 
     async def describe_metadata(self) -> Any:
@@ -281,9 +266,8 @@ class AsyncSfdcMetadataApi:
 
         :returns: An object of zeep.objects.DescribeMetadataResult
         """
-        await self.start_session()
-        return self.service.describeMetadata(
-            self._api_version, _soapheaders=[self.session_header]
+        return await self._service.describeMetadata(
+            self._api_version, _soapheaders=[self._session_header]
         )
 
     async def list_metadata(self, queries: List[Any]) -> List[Any]:
@@ -297,9 +281,8 @@ class AsyncSfdcMetadataApi:
         :returns: List of zeep.objects.FileProperties objects
         :rtype: list
         """
-        await self.start_session()
-        return self.service.listMetadata(  # type: ignore[no-any-return]
-            queries, self._api_version, _soapheaders=[self.session_header]
+        return await self._service.listMetadata(  # type: ignore[no-any-return]
+            queries, self._api_version, _soapheaders=[self._session_header]
         )
 
     # pylint: disable=R0914
