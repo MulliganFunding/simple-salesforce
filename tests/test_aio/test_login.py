@@ -178,6 +178,39 @@ async def test_token_login_success_with_key_string(
     )
 
 
+async def test_token_login_with_instance_url(
+    sample_key_filepath, urls, constants, httpx_mock: HTTPXMock
+):
+    """Test a successful JWT Token login with an instance_url and a domain"""
+    httpx_mock.add_response(
+        status_code=200,
+        url=re.compile(r"https://anothertestdomain\.my.*"),
+        text=constants["TOKEN_LOGIN_RESPONSE_SUCCESS"],
+    )
+
+    (session_id, instance_url) = await AsyncSalesforceLogin(
+        username="foo@bar.com",
+        consumer_key="12345.abcde",
+        domain="testdomain.my",
+        instance_url="anothertestdomain.my.salesforce.com",
+        privatekey_file=sample_key_filepath,
+    )
+
+    assert session_id == constants["SESSION_ID"]
+    assert instance_url == urlparse(constants["INSTANCE_URL"]).netloc
+
+    requests = httpx_mock.get_requests()
+    assert len(requests) == 1
+
+    assert requests[0].method == "POST"
+    assert str(requests[0].url).startswith("https://anothertestdomain.my.salesforce.com")
+    parsed_data = parse_qs(requests[0].content)
+
+    assert parsed_data[b"grant_type"] == (
+        [b"urn:ietf:params:oauth:grant-type:jwt-bearer"]
+    )
+
+
 async def test_token_login_success_with_key_bytes(
     sample_key, urls, constants, httpx_mock: HTTPXMock
 ):

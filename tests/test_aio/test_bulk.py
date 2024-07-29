@@ -5,7 +5,6 @@ import json
 import random
 from unittest import mock
 
-import httpx
 import pytest
 from pytest_httpx import HTTPXMock
 
@@ -116,9 +115,11 @@ async def test_insert(operation, method_name, sf_client, httpx_mock: HTTPXMock):
         },
     ]
     function = getattr(sf_client.bulk.Contact, method_name)
-    result = await function(data, wait=0.1)
-    assert EXPECTED_RESULT == result
-
+    coro = await function(data, wait=0.1)
+    results = []
+    async for result in coro:
+        results.append(result)
+    assert EXPECTED_RESULT == results
 
 
 async def test_upsert(sf_client, httpx_mock: HTTPXMock):
@@ -150,8 +151,12 @@ async def test_upsert(sf_client, httpx_mock: HTTPXMock):
         httpx_mock.add_response(200, json=body)
 
     data = [{"id": "ID-1"}, {"id": "ID-2"}]
-    result = await sf_client.bulk.Contact.upsert(data, "some-field", wait=0.1)
-    assert EXPECTED_RESULT == result
+    results = []
+    coro = await sf_client.bulk.Contact.upsert(data, "some-field", wait=0.1)
+    async for result in coro:
+        results.append(result)
+
+    assert EXPECTED_RESULT == results
 
 
 
@@ -344,11 +349,14 @@ async def test_query_lazy(httpx_mock: HTTPXMock, sf_client):
         httpx_mock.add_response(200, json=body)
 
     data = "SELECT Id,AccountId,Email,FirstName,LastName FROM Contact"
-    result = await sf_client.bulk.Contact.query_all(data, wait=0.1, lazy_operation=True)
-    assert body7[0] in result[0]
-    assert body7[1] in result[0]
-    assert body8[0] in result[1]
-    assert body8[1] in result[1]
+    results = []
+    coro = await sf_client.bulk.Contact.query_all(data, wait=0.1, lazy_operation=True)
+    async for result in coro:
+        results.append(result)
+    assert body7[0] in results[0]
+    assert body7[1] in results[0]
+    assert body8[0] in results[1]
+    assert body8[1] in results[1]
     # [[{'Id': '001xx000003DHP0AAO', 'AccountId': 'ID-13',
     # 'Email': 'contact1@example.com', 'FirstName': 'Bob',
     # 'LastName': 'x'}, {'Id': '001xx000003DHP1AAO',
@@ -434,9 +442,11 @@ async def test_bulk_operation_auto_batch_size(httpx_mock: HTTPXMock, sf_client):
         'FirstName': 'Bob',
         'LastName': 'x'
     }]
-    await sf_client.bulk.Contact._bulk_operation(
+    results = []
+    async for result in sf_client.bulk.Contact._bulk_operation(
         operation, data, batch_size="auto"
-    )
+    ):
+        results.append(result)
     requests = httpx_mock.get_requests()
     assert len(requests) == 2
     req1, req2 = requests

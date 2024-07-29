@@ -6,14 +6,15 @@ import csv
 import http.client as http
 import json
 import os
-from pathlib import Path
 import re
 import sys
 from collections import OrderedDict
-from typing import Dict, Tuple, Union, List
+from typing import Any, AnyStr, AsyncIterator, Callable, Dict, Tuple, List
+from typing_extensions import Literal
 
 import aiofiles
 import httpx
+from httpx import Headers
 import math
 import pendulum
 from pendulum import DateTime
@@ -29,20 +30,26 @@ from simple_salesforce.bulk2 import (
     ColumnDelimiter,
     LineEnding,
     ResultsType,
-    _convert_dict_to_csv, # Dedupe from upstream
+    QueryResult,
+    _convert_dict_to_csv,  # Dedupe from upstream
     _delimiter_char,  # Dedupe from upstream
     _line_ending_char,  # Dedupe from upstream
     MAX_INGEST_JOB_FILE_SIZE,
     DEFAULT_QUERY_PAGE_SIZE,
 )
-from .aio_util import call_salesforce, create_session_factory
+from simple_salesforce.util import Proxies
+from .aio_util import call_salesforce
 
 
 # pylint: disable=missing-class-docstring,invalid-name,too-many-arguments,
 # too-many-locals
 
 
-async def _split_csv(filename=None, records=None, max_records: int = None):
+async def _split_csv(
+    filename: str | None = None,
+    records: str | None = None,
+    max_records: int | None = None,
+) -> AsyncIterator[Tuple[int, str]]:
     """Split a CSV file into chunks to avoid exceeding the Salesforce
     bulk 2.0 API limits.
 
@@ -63,15 +70,16 @@ async def _split_csv(filename=None, records=None, max_records: int = None):
     )  # -1 MB for sentinel
     records_size = 0
     bytes_size = 0
-    buff = []
+    buff: List[str] = []
     if filename:
-        async with aiofiles.open(filename, encoding="utf-8") as bis:
-            header = None
-            async for line in bis:
-                if header is None:
-                    header = line
-                    continue
+        async with aiofiles.open(filename, encoding="utf-8") as _bis:
+            bis = aiter(_bis)
+            try:
+                header = await anext(bis)
+            except StopAsyncIteration:
+                raise ValueError(f"{filename} is empty")
 
+            async for line in bis:
                 records_size += 1
                 bytes_size += len(line.encode("utf-8"))
                 if records_size > max_records or bytes_size > max_bytes:
@@ -84,7 +92,7 @@ async def _split_csv(filename=None, records=None, max_records: int = None):
                     buff.append(line)
             if buff:
                 yield records_size, header + "".join(buff)
-    else:
+    elif records:
         header = records.splitlines(True)[0]
         for line in records.splitlines(True)[1:]:
             records_size += 1
@@ -102,8 +110,11 @@ async def _split_csv(filename=None, records=None, max_records: int = None):
 
 
 async def _count_csv(
-    filename=None, data=None, skip_header=False, line_ending=LineEnding.LF
-):
+    filename: str | None = None,
+    data: str | None = None,
+    skip_header: bool = False,
+    line_ending: LineEnding = LineEnding.LF,
+) -> int:
     """Count the number of records in a CSV file."""
     if filename:
         count = 0
@@ -129,7 +140,13 @@ class AsyncSFBulk2Handler:
     to allow the above syntax
     """
 
-    def __init__(self, session_id, bulk2_url, proxies, session_factory):
+    def __init__(
+        self,
+        session_id: str,
+        bulk2_url: str,
+        proxies: Proxies | None,
+        session_factory: Callable[[], httpx.AsyncClient],
+    ):
         """Initialize the instance with the given parameters.
 
         Arguments:
@@ -142,21 +159,19 @@ class AsyncSFBulk2Handler:
                              exposed by simple_salesforce.
         """
         self.session_id = session_id
-        self.session_factory = session_factory
         self.bulk2_url = bulk2_url
         # don't wipe out original proxies with None
-        if not self.session_factory:
-            self.session_factory = create_session_factory(proxies=proxies)
+        self.session_factory = session_factory
 
         # Define these headers separate from Salesforce class,
         # as bulk uses a slightly different format
-        self.headers = {
+        self.headers = Headers({
             "Content-Type": "application/json",
             "Authorization": "Bearer " + self.session_id,
             "X-PrettyPrint": "1",
-        }
+        })
 
-    def __getattr__(self, name):
+    def __getattr__(self, name: str) -> "AsyncSFBulk2Type":
         return AsyncSFBulk2Type(
             object_name=name,
             bulk2_url=self.bulk2_url,
@@ -174,7 +189,13 @@ class _AsyncBulk2Client:
     DEFAULT_WAIT_TIMEOUT_SECONDS = 86400  # 24-hour bulk job running time
     MAX_CHECK_INTERVAL_SECONDS = 2.0
 
-    def __init__(self, object_name, bulk2_url, headers, session_factory):
+    def __init__(
+        self,
+        object_name: str,
+        bulk2_url: str,
+        headers: Headers,
+        session_factory: Callable[[], httpx.AsyncClient],
+    ):
         """
         Arguments:
 
@@ -191,14 +212,18 @@ class _AsyncBulk2Client:
         self.session_factory = session_factory
         self.headers = headers
 
-    def _get_headers(self, request_content_type=None, accept_content_type=None):
+    def _get_headers(
+        self,
+        request_content_type: str | None = None,
+        accept_content_type: str | None = None,
+    ) -> Headers:
         """Get headers for bulk 2.0 API request"""
         headers = copy.deepcopy(self.headers)
         headers["Content-Type"] = request_content_type or self.JSON_CONTENT_TYPE
         headers["ACCEPT"] = accept_content_type or self.JSON_CONTENT_TYPE
-        return headers
+        return Headers(headers)
 
-    def _construct_request_url(self, job_id, is_query: bool):
+    def _construct_request_url(self, job_id: str, is_query: bool) -> str:
         """Construct bulk 2.0 API request URL"""
         if not job_id:
             job_id = ""
@@ -212,12 +237,12 @@ class _AsyncBulk2Client:
 
     async def create_job(
         self,
-        operation,
-        query=None,
-        column_delimiter=ColumnDelimiter.COMMA,
-        line_ending=LineEnding.LF,
-        external_id_field=None,
-    ):
+        operation: Operation,
+        query: str | None = None,
+        column_delimiter: ColumnDelimiter = ColumnDelimiter.COMMA,
+        line_ending: LineEnding = LineEnding.LF,
+        external_id_field: str | None = None,
+    ) -> Any:
         """Create job
 
         Arguments:
@@ -237,7 +262,7 @@ class _AsyncBulk2Client:
             payload["externalIdFieldName"] = external_id_field
 
         is_query = operation in (Operation.query, Operation.query_all)
-        url = self._construct_request_url(None, is_query)
+        url = self._construct_request_url("", is_query)
         if is_query:
             headers = self._get_headers(self.JSON_CONTENT_TYPE, self.CSV_CONTENT_TYPE)
             if not query:
@@ -252,11 +277,13 @@ class _AsyncBulk2Client:
             method="POST",
             session_factory=self.session_factory,
             headers=headers,
-            data=json.dumps(payload, allow_nan=False),
+            content=json.dumps(payload, allow_nan=False),
         )
         return result.json(object_pairs_hook=OrderedDict)
 
-    async def wait_for_job(self, job_id, is_query: bool, wait=0.5):
+    async def wait_for_job(
+        self, job_id: str, is_query: bool, wait: float = 0.5
+    ) -> Literal[JobState.job_complete]:
         """Wait for job completion or timeout"""
         expiration_time: DateTime = pendulum.now().add(
             seconds=self.DEFAULT_WAIT_TIMEOUT_SECONDS
@@ -286,15 +313,15 @@ class _AsyncBulk2Client:
             await asyncio.sleep(delay_timeout)
         raise SalesforceOperationError(f"Job timeout. Job status: {job_status}")
 
-    async def abort_job(self, job_id, is_query: bool):
+    async def abort_job(self, job_id: str, is_query: bool) -> Any:
         """Abort query/ingest job"""
         return await self._set_job_state(job_id, is_query, JobState.aborted)
 
-    async def close_job(self, job_id):
+    async def close_job(self, job_id: str) -> Any:
         """Close ingest job"""
         return await self._set_job_state(job_id, False, JobState.upload_complete)
 
-    async def delete_job(self, job_id, is_query: bool):
+    async def delete_job(self, job_id: str, is_query: bool) -> Any:
         """Delete query/ingest job"""
         url = self._construct_request_url(job_id, is_query)
         headers = self._get_headers()
@@ -306,7 +333,7 @@ class _AsyncBulk2Client:
         )
         return result.json(object_pairs_hook=OrderedDict)
 
-    async def _set_job_state(self, job_id, is_query: bool, state: str):
+    async def _set_job_state(self, job_id: str, is_query: bool, state: str) -> Any:
         """Set job state"""
         url = self._construct_request_url(job_id, is_query)
         headers = self._get_headers()
@@ -316,11 +343,11 @@ class _AsyncBulk2Client:
             method="PATCH",
             session_factory=self.session_factory,
             headers=headers,
-            data=json.dumps(payload, allow_nan=False),
+            content=json.dumps(payload, allow_nan=False),
         )
         return result.json(object_pairs_hook=OrderedDict)
 
-    async def get_job(self, job_id, is_query: bool):
+    async def get_job(self, job_id: str, is_query: bool) -> Any:
         """Get job info"""
         url = self._construct_request_url(job_id, is_query)
 
@@ -332,7 +359,7 @@ class _AsyncBulk2Client:
         )
         return result.json(object_pairs_hook=OrderedDict)
 
-    def filter_null_bytes(self, b: Union[str, bytes]):
+    def filter_null_bytes(self, b: AnyStr) -> AnyStr:
         """
         https://github.com/airbytehq/airbyte/issues/8300
         """
@@ -343,11 +370,11 @@ class _AsyncBulk2Client:
         raise TypeError("Expected str or bytes")
 
     async def get_query_results(
-        self, job_id, locator: str = "", max_records=DEFAULT_QUERY_PAGE_SIZE
-    ):
+        self, job_id: str, locator: str = "", max_records: int = DEFAULT_QUERY_PAGE_SIZE
+    ) -> QueryResult:
         """Get results for a query job"""
         url = self._construct_request_url(job_id, True) + "/results"
-        params = {"maxRecords": max_records}
+        params: Dict[str, str | int] = {"maxRecords": max_records}
         if locator and locator != "null":
             params["locator"] = locator
         headers = self._get_headers(self.JSON_CONTENT_TYPE, self.CSV_CONTENT_TYPE)
@@ -370,28 +397,24 @@ class _AsyncBulk2Client:
 
     async def download_job_data(
         self,
-        path: str | Path,
-        job_id,
+        path: str | os.PathLike[str],
+        job_id: str,
         locator: str = "",
-        max_records=DEFAULT_QUERY_PAGE_SIZE,
-        chunk_size=1024,
-    ):
+        max_records: int = DEFAULT_QUERY_PAGE_SIZE,
+        chunk_size: int = 1024,
+    ) -> QueryResult:
         """Get results for a query job"""
         if not os.path.exists(path):
             raise SalesforceBulkV2LoadError(f"Path does not exist: {path}")
 
         url = self._construct_request_url(job_id, True) + "/results"
-        params = {"maxRecords": max_records}
+        params: Dict[str, str | int] = {"maxRecords": max_records}
         if locator and locator != "null":
             params["locator"] = locator
         headers = self._get_headers(self.JSON_CONTENT_TYPE, self.CSV_CONTENT_TYPE)
 
         # Pull results: because we are streaming, we need to use a session
-        if self.session_factory:
-            client = self.session_factory()
-        else:
-            client = httpx.AsyncClient()
-
+        client = self.session_factory()
         ts = pendulum.now("UTC").format("YYYYMMDDHHmmss")
         temp_fname = os.path.join(path, f"{job_id}-{ts}.csv")
 
@@ -417,10 +440,12 @@ class _AsyncBulk2Client:
                 }
             raise SalesforceBulkV2LoadError(
                 f"The IO/Error occured while verifying binary data. "
-                f"File {bos.name} doesn't exist, url: {url}, "
+                f"File {bos.name} doesn't exist, url: {url}, "  # type: ignore
             )
 
-    async def upload_job_data(self, job_id, data: str, content_url=None):
+    async def upload_job_data(
+        self, job_id: str, data: str, content_url: str | None = None
+    ) -> None:
         """Upload job data"""
         if not data:
             raise SalesforceBulkV2LoadError("Data is required for ingest jobs")
@@ -446,10 +471,10 @@ class _AsyncBulk2Client:
         if result.status_code != http.CREATED:
             raise SalesforceBulkV2LoadError(
                 f"Failed to upload job data. Error Code {result.status_code}. "
-                f"Response content: {result.content}"
+                f"Response content: {result.content}"  # type: ignore
             )
 
-    async def get_ingest_results(self, job_id, results_type):
+    async def get_ingest_results(self, job_id: str, results_type: str) -> str:
         """Get record results"""
         url = self._construct_request_url(job_id, False) + "/" + results_type
         headers = self._get_headers(self.JSON_CONTENT_TYPE, self.CSV_CONTENT_TYPE)
@@ -459,18 +484,30 @@ class _AsyncBulk2Client:
         return result.text
 
     async def download_ingest_results(
-        self, file, job_id, results_type, chunk_size=1024
-    ):
+        self,
+        file: str | os.PathLike[AnyStr],
+        job_id: str,
+        results_type: str,
+        chunk_size: int = 1024,
+    ) -> None:
         """Download record results to a file"""
         url = self._construct_request_url(job_id, False) + "/" + results_type
         headers = self._get_headers(self.JSON_CONTENT_TYPE, self.CSV_CONTENT_TYPE)
-        result = await call_salesforce(
-            url=url, method="GET", session_factory=self.session_factory, headers=headers
-        )
 
+        # Pull results: because we are streaming, we need to use a session
+        client = self.session_factory()
         async with aiofiles.open(file, "wb") as bos:
-            for data in result.iter_bytes(chunk_size=chunk_size):
-                await bos.write(self.filter_null_bytes(data))
+            async with client.stream(
+                "GET",
+                url,
+                headers=headers,
+            ) as response:
+                locator = response.headers.get("Sforce-Locator", "")
+                if locator == "null":
+                    locator = ""
+
+                async for chunk in response.aiter_bytes(chunk_size=chunk_size):
+                    await bos.write(self.filter_null_bytes(chunk))
 
         if not os.path.exists(file):
             raise SalesforceBulkV2LoadError(
@@ -482,7 +519,13 @@ class _AsyncBulk2Client:
 class AsyncSFBulk2Type:
     """Interface to Bulk 2.0 API functions"""
 
-    def __init__(self, object_name, bulk2_url, headers, session_factory):
+    def __init__(
+        self,
+        object_name: str,
+        bulk2_url: str,
+        headers: Headers,
+        session_factory: Callable[[], httpx.AsyncClient],
+    ):
         """Initialize the instance with the given parameters.
 
         Arguments:
@@ -505,15 +548,15 @@ class AsyncSFBulk2Type:
 
     async def _upload_data(
         self,
-        operation,
-        data: Union[str, Tuple[int, str]],
-        column_delimiter=ColumnDelimiter.COMMA,
-        line_ending=LineEnding.LF,
-        external_id_field=None,
-        wait=5,
-    ) -> Dict:
+        operation: Operation,
+        data: str | Tuple[int, str],
+        column_delimiter: ColumnDelimiter = ColumnDelimiter.COMMA,
+        line_ending: LineEnding = LineEnding.LF,
+        external_id_field: str | None = None,
+        wait: int = 5,
+    ) -> Dict[str, str | int]:
         """Upload data to Salesforce"""
-        if len(data) == 2:
+        if isinstance(data, tuple) and len(data) == 2:
             total, data = data
         else:
             total = await _count_csv(
@@ -554,25 +597,29 @@ class AsyncSFBulk2Type:
     # pylint:disable=too-many-locals
     async def _upload_file(
         self,
-        operation,
-        csv_file=None,
-        records=None,
-        batch_size=None,
-        column_delimiter=ColumnDelimiter.COMMA,
-        line_ending=LineEnding.LF,
-        external_id_field=None,
-        wait=5,
-    ) -> List[Dict]:
+        operation: Operation,
+        csv_file: str | os.PathLike[AnyStr] | None = None,
+        records: str | None = None,
+        batch_size: int | None = None,
+        column_delimiter: ColumnDelimiter = ColumnDelimiter.COMMA,
+        line_ending: LineEnding = LineEnding.LF,
+        external_id_field: str | None = None,
+        wait: int = 5,
+    ) -> List[Dict[str, str | int]]:
         """Upload csv file to Salesforce"""
         if csv_file and records:
             raise SalesforceBulkV2LoadError("Cannot include both file and " "records")
         if not records and csv_file:
             if not os.path.exists(csv_file):
-                raise SalesforceBulkV2LoadError(csv_file + " not found.")
+                raise SalesforceBulkV2LoadError(str(csv_file) + " not found.")
 
-        if operation in (Operation.delete, Operation.hard_delete):
-            async with aiofiles.open(csv_file, "r", encoding="utf-8") as bis:
-                header = await anext(bis, None)
+        if (
+            operation in (Operation.delete, Operation.hard_delete)
+            and csv_file is not None
+        ):
+            async with aiofiles.open(csv_file, "r", encoding="utf-8") as _bis:
+                bis = aiter(_bis)
+                header: str | None = await anext(bis, None)
                 if header is None:
                     raise SalesforceBulkV2LoadError(
                         f"InvalidBatch: The '{operation}' batch must contain "
@@ -594,6 +641,8 @@ class AsyncSFBulk2Type:
             split_data = _split_csv(records=records, max_records=batch_size)
 
         futures = []
+        # This may load all data into memory causing OOMKilled behavior
+        # Investigate and fix
         async for data in split_data:
             futures.append(
                 self._upload_data(
@@ -610,22 +659,22 @@ class AsyncSFBulk2Type:
 
     async def delete(
         self,
-        csv_file=None,
-        records=None,
-        batch_size=None,
-        column_delimiter=ColumnDelimiter.COMMA,
-        line_ending=LineEnding.LF,
-        external_id_field=None,
-        wait=5,
-    ) -> List[Dict]:
+        csv_file: str | os.PathLike[AnyStr] | None = None,
+        records: List[Dict[str, str]] | None = None,
+        batch_size: int | None = None,
+        column_delimiter: ColumnDelimiter = ColumnDelimiter.COMMA,
+        line_ending: LineEnding = LineEnding.LF,
+        external_id_field: str | None = None,
+        wait: int = 5,
+    ) -> List[Dict[str, str | int]]:
         """soft delete records"""
         return await self._upload_file(
             Operation.delete,
             csv_file=csv_file,
             records=_convert_dict_to_csv(
                 records,
-                column_delimiter=_delimiter_char.get(column_delimiter),
-                line_ending=_line_ending_char.get(line_ending),
+                column_delimiter=_delimiter_char.get(column_delimiter, ","),
+                line_ending=_line_ending_char.get(line_ending, "\n"),
             ),
             batch_size=batch_size,
             column_delimiter=column_delimiter,
@@ -636,21 +685,21 @@ class AsyncSFBulk2Type:
 
     async def insert(
         self,
-        csv_file=None,
-        records=None,
-        batch_size=None,
-        column_delimiter=ColumnDelimiter.COMMA,
-        line_ending=LineEnding.LF,
-        wait=5,
-    ) -> List[Dict]:
+        csv_file: str | os.PathLike[AnyStr] | None = None,
+        records: List[Dict[str, str]] | None = None,
+        batch_size: int | None = None,
+        column_delimiter: ColumnDelimiter = ColumnDelimiter.COMMA,
+        line_ending: LineEnding = LineEnding.LF,
+        wait: int = 5,
+    ) -> List[Dict[str, str | int]]:
         """insert records"""
         return await self._upload_file(
             Operation.insert,
             csv_file=csv_file,
             records=_convert_dict_to_csv(
                 records,
-                column_delimiter=_delimiter_char.get(column_delimiter),
-                line_ending=_line_ending_char.get(line_ending),
+                column_delimiter=_delimiter_char.get(column_delimiter, ","),
+                line_ending=_line_ending_char.get(line_ending, "\n"),
             ),
             batch_size=batch_size,
             column_delimiter=column_delimiter,
@@ -660,22 +709,22 @@ class AsyncSFBulk2Type:
 
     async def upsert(
         self,
-        csv_file=None,
-        records=None,
-        external_id_field="Id",
-        batch_size=None,
-        column_delimiter=ColumnDelimiter.COMMA,
-        line_ending=LineEnding.LF,
-        wait=5,
-    ) -> List[Dict]:
+        csv_file: str | os.PathLike[AnyStr] | None = None,
+        records: List[Dict[str, str]] | None = None,
+        external_id_field: str = "Id",
+        batch_size: int | None = None,
+        column_delimiter: ColumnDelimiter = ColumnDelimiter.COMMA,
+        line_ending: LineEnding = LineEnding.LF,
+        wait: int = 5,
+    ) -> List[Dict[str, str | int]]:
         """upsert records based on a unique identifier"""
         return await self._upload_file(
             Operation.upsert,
             csv_file=csv_file,
             records=_convert_dict_to_csv(
                 records,
-                column_delimiter=_delimiter_char.get(column_delimiter),
-                line_ending=_line_ending_char.get(line_ending),
+                column_delimiter=_delimiter_char.get(column_delimiter, ","),
+                line_ending=_line_ending_char.get(line_ending, "\n"),
             ),
             batch_size=batch_size,
             column_delimiter=column_delimiter,
@@ -686,21 +735,21 @@ class AsyncSFBulk2Type:
 
     async def update(
         self,
-        csv_file=None,
-        records=None,
-        batch_size=None,
-        column_delimiter=ColumnDelimiter.COMMA,
-        line_ending=LineEnding.LF,
-        wait=5,
-    ) -> List[Dict]:
+        csv_file: str | os.PathLike[AnyStr] | None = None,
+        records: List[Dict[str, str]] | None = None,
+        batch_size: int | None = None,
+        column_delimiter: ColumnDelimiter = ColumnDelimiter.COMMA,
+        line_ending: LineEnding = LineEnding.LF,
+        wait: int = 5,
+    ) -> List[Dict[str, str | int]]:
         """update records"""
         return await self._upload_file(
             Operation.update,
             csv_file=csv_file,
             records=_convert_dict_to_csv(
                 records,
-                column_delimiter=_delimiter_char.get(column_delimiter),
-                line_ending=_line_ending_char.get(line_ending),
+                column_delimiter=_delimiter_char.get(column_delimiter, ","),
+                line_ending=_line_ending_char.get(line_ending, "\n"),
             ),
             batch_size=batch_size,
             column_delimiter=column_delimiter,
@@ -710,21 +759,21 @@ class AsyncSFBulk2Type:
 
     async def hard_delete(
         self,
-        csv_file=None,
-        records=None,
-        batch_size=None,
-        column_delimiter=ColumnDelimiter.COMMA,
-        line_ending=LineEnding.LF,
-        wait=5,
-    ) -> List[Dict]:
+        csv_file: str | os.PathLike[AnyStr] | None = None,
+        records: List[Dict[str, str]] | None = None,
+        batch_size: int | None = None,
+        column_delimiter: ColumnDelimiter = ColumnDelimiter.COMMA,
+        line_ending: LineEnding = LineEnding.LF,
+        wait: int = 5,
+    ) -> List[Dict[str, str | int]]:
         """hard delete records"""
         return await self._upload_file(
             Operation.hard_delete,
             csv_file=csv_file,
             records=_convert_dict_to_csv(
                 records,
-                column_delimiter=_delimiter_char.get(column_delimiter),
-                line_ending=_line_ending_char.get(line_ending),
+                column_delimiter=_delimiter_char.get(column_delimiter, ","),
+                line_ending=_line_ending_char.get(line_ending, "\n"),
             ),
             batch_size=batch_size,
             column_delimiter=column_delimiter,
@@ -734,12 +783,12 @@ class AsyncSFBulk2Type:
 
     async def query(
         self,
-        query,
-        max_records=DEFAULT_QUERY_PAGE_SIZE,
-        column_delimiter=ColumnDelimiter.COMMA,
-        line_ending=LineEnding.LF,
-        wait=5,
-    ):
+        query: str,
+        max_records: int = DEFAULT_QUERY_PAGE_SIZE,
+        column_delimiter: ColumnDelimiter = ColumnDelimiter.COMMA,
+        line_ending: LineEnding = LineEnding.LF,
+        wait: int = 5,
+    ) -> AsyncIterator[AnyStr]:
         """bulk 2.0 query
 
         Arguments:
@@ -765,15 +814,48 @@ class AsyncSFBulk2Type:
             locator = result["locator"]
             yield result["records"]
 
+    async def query_all(
+        self,
+        query: str,
+        max_records: int = DEFAULT_QUERY_PAGE_SIZE,
+        column_delimiter: ColumnDelimiter = ColumnDelimiter.COMMA,
+        line_ending: LineEnding = LineEnding.LF,
+        wait: int = 5,
+    ) -> AsyncIterator[AnyStr]:
+        """bulk 2.0 query_all
+
+        Arguments:
+        * query -- SOQL query
+        * max_records -- max records to retrieve per batch, default 50000
+
+        Returns:
+        * locator  -- the locator for the next set of results
+        * number_of_records -- the number of records in this set
+        * records -- records in this set
+        """
+        res = await self._client.create_job(
+            Operation.query_all, query, column_delimiter, line_ending
+        )
+        job_id = res["id"]
+        await self._client.wait_for_job(job_id, True, wait)
+
+        locator = "INIT"
+        while locator:
+            if locator == "INIT":
+                locator = ""
+            result = await self._client.get_query_results(job_id, locator, max_records)
+            locator = result["locator"]
+            yield result["records"]
+
     async def download(
         self,
         query: str,
-        path: str | Path,
-        max_records=DEFAULT_QUERY_PAGE_SIZE,
-        column_delimiter=ColumnDelimiter.COMMA,
-        line_ending=LineEnding.LF,
-        wait=5,
-    ) -> List[Dict]:
+        path: str | os.PathLike[AnyStr],
+        max_records: int = DEFAULT_QUERY_PAGE_SIZE,
+        column_delimiter: ColumnDelimiter = ColumnDelimiter.COMMA,
+        line_ending: LineEnding = LineEnding.LF,
+        wait: int = 5,
+    ) -> List[QueryResult]:
         """bulk 2.0 query stream to file, avoiding high memory usage
 
         Arguments:
@@ -806,14 +888,18 @@ class AsyncSFBulk2Type:
             results.append(result)
         return results
 
-    async def _retrieve_ingest_records(self, job_id, results_type, file=None):
+    async def _retrieve_ingest_records(
+        self, job_id: str, results_type: str, file: str | os.PathLike[AnyStr] | None = None
+    ) -> str | None:
         """Retrieve the results of an ingest job"""
         if not file:
             return await self._client.get_ingest_results(job_id, results_type)
         await self._client.download_ingest_results(file, job_id, results_type)
-        return ""
+        return file
 
-    async def get_failed_records(self, job_id, file=None):
+    async def get_failed_records(
+        self, job_id: str, file: str | os.PathLike[AnyStr] | None = None
+    ) -> str | None:
         """Get failed record results
 
         Results Property:
@@ -823,7 +909,9 @@ class AsyncSFBulk2Type:
         """
         return await self._retrieve_ingest_records(job_id, ResultsType.failed, file)
 
-    async def get_unprocessed_records(self, job_id, file=None):
+    async def get_unprocessed_records(
+        self, job_id: str, file: str | os.PathLike[AnyStr] | None = None
+    ) -> str | None:
         """Get unprocessed record results
 
         Results Property:
@@ -833,7 +921,9 @@ class AsyncSFBulk2Type:
             job_id, ResultsType.unprocessed, file
         )
 
-    async def get_successful_records(self, job_id, file=None):
+    async def get_successful_records(
+        self, job_id: str, file: str | os.PathLike[AnyStr] | None = None
+    ) -> str | None:
         """Get successful record results.
 
         Results Property:
@@ -843,7 +933,9 @@ class AsyncSFBulk2Type:
         """
         return await self._retrieve_ingest_records(job_id, ResultsType.successful, file)
 
-    async def get_all_ingest_records(self, job_id, file=None):
+    async def get_all_ingest_records(
+        self, job_id: str, file: str | os.PathLike[AnyStr] | None = None
+    ) -> Dict[str, List[str]]:
         """Get all ingest record results for job
 
         Results Property:
@@ -857,21 +949,30 @@ class AsyncSFBulk2Type:
             self.get_failed_records(job_id=job_id, file=file),
             self.get_unprocessed_records(job_id=job_id, file=file),
         )
-        successful_records = csv.DictReader(
-            successful.splitlines(),
-            delimiter=",",
-            lineterminator="\n",
-        )
-        failed_records = csv.DictReader(
-            failed.splitlines(),
-            delimiter=",",
-            lineterminator="\n",
-        )
-        unprocessed_records = csv.DictReader(
-            unprocessed.splitlines(),
-            delimiter=",",
-            lineterminator="\n",
-        )
+        if successful is not None:
+            successful_records = csv.DictReader(
+                successful.splitlines(),
+                delimiter=",",
+                lineterminator="\n",
+            )
+        else:
+            successful_records = []
+        if failed is not None:
+            failed_records = csv.DictReader(
+                failed.splitlines(),
+                delimiter=",",
+                lineterminator="\n",
+            )
+        else:
+            failed_records = []
+        if unprocessed is not None:
+            unprocessed_records = csv.DictReader(
+                unprocessed.splitlines(),
+                delimiter=",",
+                lineterminator="\n",
+            )
+        else:
+            unprocessed_records = []
         return {
             "successfulRecords": list(successful_records),
             "failedRecords": list(failed_records),

@@ -3,12 +3,21 @@ on:
   pull_request:
     branches:
       - master
+      - main
     paths-ignore:
       - 'docs/**'
       - '*.md'
       - '*.rst'
+
 jobs:
   tests:
+    env:
+      COVERAGE_DIR: ${{ format('/tmp/coverage/{0}', github.run_id) }}
+    permissions:
+        checks: write
+        contents: read
+        pull-requests: write
+
     name: "Python ${{ matrix.python-version }}"
     runs-on: "ubuntu-latest"
     strategy:
@@ -34,4 +43,36 @@ jobs:
       - name: "Run poetry install deps"
         run: "poetry install --no-root"
       - name: "Run tests"
-        run: "poetry run pytest"
+        run: "poetry run pytest --cov-report xml --junitxml=${COVERAGE_DIR}/unittest.junit.xml"
+
+      # - name: "Run mypy"
+      #   run: "poetry run mypy simple_salesforce/aio"
+
+      # Publish code coverage results
+      - name: Code Coverage Report
+        if: ${{ matrix.python-version == '3.11' && matrix.os == 'ubuntu-latest' }}
+        uses: irongut/CodeCoverageSummary@v1.3.0
+        with:
+          filename: coverage.xml
+          badge: true
+          fail_below_min: true
+          format: markdown
+          hide_branch_rate: false
+          hide_complexity: true
+          indicators: true
+          output: both
+          thresholds: '70 80'
+
+      - name: Add Coverage PR Comment
+        if: ${{ matrix.python-version == '3.11' && matrix.os == 'ubuntu-latest' }}
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          recreate: true
+          path: code-coverage-results.md
+
+      # Publish junit test result
+      - name: Publish Test Report
+        if: ${{ matrix.python-version == '3.11' && matrix.os == 'ubuntu-latest' }}
+        uses: mikepenz/action-junit-report@v4
+        with:
+          report_paths: ${{ format('/tmp/coverage/{0}/*junit.xml', github.run_id) }}

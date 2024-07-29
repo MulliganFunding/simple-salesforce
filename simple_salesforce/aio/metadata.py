@@ -1,10 +1,17 @@
 """Async Class to work with Salesforce Metadata API """
+
 from base64 import b64encode, b64decode
 from pathlib import Path
+from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple
 from xml.etree import ElementTree as ET
+from xml.etree.ElementTree import Element
 
 import aiofiles
+import httpx
 from zeep import AsyncClient, Settings
+from zeep.proxy import AsyncServiceProxy
+from zeep.xsd import AnySimpleType, ComplexType, CompoundValue
+
 
 from simple_salesforce.messages import (
     DEPLOY_MSG,
@@ -12,6 +19,7 @@ from simple_salesforce.messages import (
     CHECK_RETRIEVE_STATUS_MSG,
     RETRIEVE_MSG,
 )
+from simple_salesforce.util import Headers
 from .aio_util import call_salesforce
 
 
@@ -20,14 +28,20 @@ class AsyncMetadataType:
     Salesforce Metadata Type (using Async Zeep client)
     """
 
-    def __init__(self, name, service, zeep_type, session_header):
+    def __init__(
+        self,
+        name: str,
+        service: AsyncServiceProxy,
+        zeep_type: ComplexType | AnySimpleType,
+        session_header: CompoundValue,
+    ):
         """
         Initialize metadata type
 
         :param name: Name of metadata type
         :type name: str
         :param service: Zeep service
-        :type service: zeep.proxy.ServiceProxy
+        :type service: zeep.proxy.AsyncServiceProxy
         :param zeep_type: Zeep type object
         :type zeep_type: zeep.xsd.ComplexType or zeep.xsd.AnySimpleType
         :param session_header: Session Id header for Metadata API calls
@@ -38,7 +52,7 @@ class AsyncMetadataType:
         self._session_header = session_header
 
     @staticmethod
-    def _handle_api_response(response):
+    def _handle_api_response(response: List[Any]) -> None:
         """
         Parses SaveResult and DeleteResult objects to identify if there was
         an error, and raises exception accordingly
@@ -58,7 +72,7 @@ class AsyncMetadataType:
         if err_string:
             raise Exception(err_string)
 
-    async def __call__(self, *args, **kwargs):
+    async def __call__(self, *args: Any, **kwargs: Any) -> Any:
         """
         Creates a new object of this metadata type
 
@@ -68,7 +82,7 @@ class AsyncMetadataType:
         """
         return await self._zeep_type(*args, **kwargs)
 
-    async def create(self, metadata):
+    async def create(self, metadata: List[Any]) -> None:
         """
         Performs a createMetadata call
 
@@ -86,7 +100,7 @@ class AsyncMetadataType:
         )
         self._handle_api_response(response)
 
-    async def read(self, full_names):
+    async def read(self, full_names: List[str]) -> List[Any] | Any:
         """
         Performs a readMetadata call
 
@@ -108,7 +122,7 @@ class AsyncMetadataType:
             return response[0]
         return response
 
-    async def update(self, metadata):
+    async def update(self, metadata: List[Any]) -> None:
         """
         Performs an updateMetadata call. All required fields must be passed
         for each component
@@ -127,7 +141,7 @@ class AsyncMetadataType:
         )
         self._handle_api_response(response)
 
-    async def upsert(self, metadata):
+    async def upsert(self, metadata: List[Any]) -> None:
         """
         Performs an upsertMetadata call. All required fields must be passed
         for each component
@@ -146,7 +160,7 @@ class AsyncMetadataType:
         )
         self._handle_api_response(response)
 
-    async def delete(self, full_names):
+    async def delete(self, full_names: List[Dict[str, Any]]) -> None:
         """
         Performs a deleteMetadata call
 
@@ -164,7 +178,7 @@ class AsyncMetadataType:
         )
         self._handle_api_response(response)
 
-    async def rename(self, old_full_name, new_full_name):
+    async def rename(self, old_full_name: str, new_full_name: str) -> None:
         """
         Performs a renameMetadata call
 
@@ -181,7 +195,7 @@ class AsyncMetadataType:
         )
         self._handle_api_response([result])
 
-    async def describe(self):
+    async def describe(self) -> Any:
         """
         Performs a describeValueType call
 
@@ -205,12 +219,12 @@ class AsyncSfdcMetadataApi:
     # pylint: disable=R0913
     def __init__(
         self,
-        session_id,
-        instance,
-        metadata_url,
-        headers,
-        api_version,
-        session_factory=None,
+        session_id: str,
+        instance: str,
+        metadata_url: str,
+        headers: Headers,
+        api_version: str | None,
+        session_factory: Optional[Callable[[], httpx.AsyncClient]] = None,
     ):
         """Initialize and check session"""
         self._session_id = session_id
@@ -222,46 +236,41 @@ class AsyncSfdcMetadataApi:
         self.session_factory = session_factory
 
         wsdl_path = Path(__file__).parent.parent / "metadata.wsdl"
+
+        # The zeep client synchronously loads the wsdl file
         self._client = AsyncClient(
             str(wsdl_path.absolute()),
             settings=Settings(strict=False, xsd_ignore_sequence_order=True),
-        )
-        self._service = None
-        self._session_header = None
+        )  # type: ignore[no-untyped-call]
+        # Odd that we can't create this easily from zeep itself
+        self._service: AsyncServiceProxy = AsyncServiceProxy(
+            self._client,
+            self._client.service._binding,
+            address=self.metadata_url,
+        )  # type: ignore[no-untyped-call]
+        self._session_header: Element = self._client.get_element(
+            "ns0:SessionHeader"  # type: ignore[no-untyped-call]
+        )(sessionId=self._session_id)
 
-    async def start_session(self):
-        if self._service is None:
-            self._service = await self._client.create_service(
-                "{http://soap.sforce.com/2006/04/metadata}MetadataBinding",
-                self.metadata_url,
-            )
-        if self._session_header is None:
-            self._session_header = await self._client.get_element("ns0:SessionHeader")(
-                sessionId=self._session_id
-            )
-
-    def __getattr__(self, item):
-        if self._service is None:
-            raise ValueError("AsyncMetadataType must be called after `start_session()`")
+    def __getattr__(self, item: str) -> "AsyncMetadataType":
         return AsyncMetadataType(
             item,
             self._service,
-            self._client.get_type("ns0:" + item),
+            self._client.get_type("ns0:" + item),  # type: ignore[no-untyped-call]
             self._session_header,
         )
 
-    async def describe_metadata(self):
+    async def describe_metadata(self) -> Any:
         """
         Performs a describeMetadata call
 
         :returns: An object of zeep.objects.DescribeMetadataResult
         """
-        await self.start_session()
-        return self._service.describeMetadata(
+        return await self._service.describeMetadata(
             self._api_version, _soapheaders=[self._session_header]
         )
 
-    async def list_metadata(self, queries):
+    async def list_metadata(self, queries: List[Any]) -> List[Any]:
         """
         Performs a listMetadata call
 
@@ -272,14 +281,15 @@ class AsyncSfdcMetadataApi:
         :returns: List of zeep.objects.FileProperties objects
         :rtype: list
         """
-        await self.start_session()
-        return self._service.listMetadata(
+        return await self._service.listMetadata(  # type: ignore[no-any-return]
             queries, self._api_version, _soapheaders=[self._session_header]
         )
 
     # pylint: disable=R0914
     # pylint: disable-msg=C0103
-    async def deploy(self, zipfile, sandbox, **kwargs):
+    async def deploy(
+        self, zipfile: str | Path, sandbox: bool, **kwargs: Any
+    ) -> Tuple[str | None, str | None]:
         """Kicks off async deployment, returns deployment id
         :param zipfile:
         :type zipfile:
@@ -342,43 +352,40 @@ class AsyncSfdcMetadataApi:
             data=request,
         )
 
-        async_process_id = (
-            ET.fromstring(result.text)
-            .find(
-                "soapenv:Body/mt:deployResponse/mt:result/mt:id", self._XML_NAMESPACES
-            )
-            .text
+        root = ET.fromstring(result.text)
+
+        async_process_id = find_element_text(
+            root,
+            "soapenv:Body/mt:deployResponse/mt:result/mt:id",
+            self._XML_NAMESPACES,
         )
-        state = (
-            ET.fromstring(result.text)
-            .find(
-                "soapenv:Body/mt:deployResponse/mt:result/mt:state",
-                self._XML_NAMESPACES,
-            )
-            .text
+
+        state = find_element_text(
+            root,
+            "soapenv:Body/mt:deployResponse/mt:result/mt:state",
+            self._XML_NAMESPACES,
         )
 
         return async_process_id, state
 
     @staticmethod
     # pylint: disable=R1732
-    async def _read_deploy_zip(zipfile):
+    async def _read_deploy_zip(zipfile: str | Path) -> str:
         """
         :param zipfile:
         :type zipfile:
         :return:
         :rtype:
         """
-        if hasattr(zipfile, "read"):
-            await zipfile.seek(0)
-            raw = await zipfile.read()
-        else:
-            async with aiofiles.open(zipfile, "rb") as fl:
-                raw = await fl.read()
+        # Synchronous file-handle: WILL BLOCK
+        async with aiofiles.open(zipfile, "rb") as fl:
+            raw = await fl.read()
 
         return b64encode(raw).decode("utf-8")
 
-    async def _retrieve_deploy_result(self, async_process_id, **kwargs):
+    async def _retrieve_deploy_result(
+        self, async_process_id: str, **kwargs: Any
+    ) -> Element:
         """Retrieves status for specified deployment id
         :param async_process_id:
         :type async_process_id:
@@ -417,14 +424,19 @@ class AsyncSfdcMetadataApi:
         return result
 
     @staticmethod
-    def get_component_error_count(value):
+    def get_component_error_count(value: str) -> int:
         """Get component error counts"""
         try:
             return int(value)
         except ValueError:
             return 0
 
-    async def check_deploy_status(self, async_process_id, **kwargs):
+    async def check_deploy_status(self, async_process_id: str, **kwargs: Any) -> Tuple[
+        Optional[str],
+        Optional[str],
+        Optional[Mapping[str, Any]],
+        Optional[Mapping[str, Any]],
+    ]:
         """
         Checks whether deployment succeeded
         :param async_process_id:
@@ -436,113 +448,105 @@ class AsyncSfdcMetadataApi:
         """
         result = await self._retrieve_deploy_result(async_process_id, **kwargs)
 
-        state = result.find("mt:status", self._XML_NAMESPACES).text
-        state_detail = result.find("mt:stateDetail", self._XML_NAMESPACES)
-        if state_detail is not None:
-            state_detail = state_detail.text
+        state = find_element_text(result, "mt:status", self._XML_NAMESPACES)
+        state_detail = find_element_text(result, "mt:stateDetail", self._XML_NAMESPACES)
 
+        component_errors = find_element_text(
+            result, "mt:numberComponentErrors", self._XML_NAMESPACES, default="0"
+        )
+        failed_count = self.get_component_error_count(component_errors)
+
+        # Remap keys to our friendly names
+        deploy_fail_node_mapper = {
+            "type": "mt:componentType",
+            "file": "mt:fileName",
+            "status": "mt:problemType",
+            "message": "mt:problem",
+        }
+        unittest_fail_node_mapper = {
+            "class": "mt:name",
+            "method": "mt:methodName",
+            "message": "mt:message",
+            "stack_trace": "mt:stackTrace",
+        }
+
+        # Pull out errors
         unit_test_errors = []
         deployment_errors = []
-        failed_count = self.get_component_error_count(
-            result.find("mt:numberComponentErrors", self._XML_NAMESPACES).text
-        )
         if state == "Failed" or failed_count > 0:
             # Deployment failures
             failures = result.findall(
                 "mt:details/mt:componentFailures", self._XML_NAMESPACES
             )
             for failure in failures:
-                deployment_errors.append(
-                    {
-                        "type": failure.find(
-                            "mt:componentType", self._XML_NAMESPACES
-                        ).text,
-                        "file": failure.find("mt:fileName", self._XML_NAMESPACES).text,
-                        "status": failure.find(
-                            "mt:problemType", self._XML_NAMESPACES
-                        ).text,
-                        "message": failure.find(
-                            "mt:problem", self._XML_NAMESPACES
-                        ).text,
-                    }
-                )
+                deploy_error = {}
+                for key, nodename in deploy_fail_node_mapper.items():
+                    deploy_error[key] = find_element_text(
+                        failure, nodename, self._XML_NAMESPACES
+                    )
+                deployment_errors.append(deploy_error)
+
             # Unit test failures
             failures = result.findall(
                 "mt:details/mt:runTestResult/mt:failures", self._XML_NAMESPACES
             )
             for failure in failures:
-                unit_test_errors.append(
-                    {
-                        "class": failure.find("mt:name", self._XML_NAMESPACES).text,
-                        "method": failure.find(
-                            "mt:methodName", self._XML_NAMESPACES
-                        ).text,
-                        "message": failure.find(
-                            "mt:message", self._XML_NAMESPACES
-                        ).text,
-                        "stack_trace": failure.find(
-                            "mt:stackTrace", self._XML_NAMESPACES
-                        ).text,
-                    }
-                )
+                unit_test_error = {}
+                for key, nodename in unittest_fail_node_mapper.items():
+                    unit_test_error[key] = find_element_text(
+                        failure, nodename, self._XML_NAMESPACES
+                    )
+                unit_test_errors.append(unit_test_error)
 
+        # Pull out deployment info
+        deploy_detail_mapper = {
+            "total_count": "mt:numberComponentsTotal",
+            "failed_count": "mt:numberComponentErrors",
+            "deployed_count": "mt:numberComponentsDeployed",
+        }
         deployment_detail = {
-            "total_count": result.find(
-                "mt:numberComponentsTotal", self._XML_NAMESPACES
-            ).text,
-            "failed_count": result.find(
-                "mt:numberComponentErrors", self._XML_NAMESPACES
-            ).text,
-            "deployed_count": result.find(
-                "mt:numberComponentsDeployed", self._XML_NAMESPACES
-            ).text,
-            "errors": deployment_errors,
+            key: find_element_text(result, nodename, self._XML_NAMESPACES)
+            for key, nodename in deploy_detail_mapper.items()
+        }
+        deployment_detail["errors"] = deployment_errors
+
+        unit_test_mapper = {
+            "total_count": "mt:numberTestsTotal",
+            "failed_count": "mt:numberTestErrors",
+            "completed_count": "mt:numberTestsCompleted",
         }
         unit_test_detail = {
-            "total_count": result.find(
-                "mt:numberTestsTotal", self._XML_NAMESPACES
-            ).text,
-            "failed_count": result.find(
-                "mt:numberTestErrors", self._XML_NAMESPACES
-            ).text,
-            "completed_count": result.find(
-                "mt:numberTestsCompleted", self._XML_NAMESPACES
-            ).text,
-            "errors": unit_test_errors,
+            key: find_element_text(result, nodename, self._XML_NAMESPACES)
+            for key, nodename in unit_test_mapper.items()
         }
+        unit_test_detail["errors"] = unit_test_errors
 
         return state, state_detail, deployment_detail, unit_test_detail
 
-    async def download_unit_test_logs(self, async_process_id):
+    async def download_unit_test_logs(self, async_process_id: str) -> None:
         """Downloads Apex logs for unit tests executed during specified
         deployment"""
         result = await self._retrieve_deploy_result(async_process_id)
         print("response: %s" % ET.tostring(result, encoding="us-ascii", method="xml"))
 
-    async def retrieve(self, async_process_id, **kwargs):
+    async def retrieve(
+        self, async_process_id: str, single_package: bool = True, **kwargs: Any
+    ) -> Tuple[Optional[str], Optional[str]]:
         """Submits retrieve request"""
         # Compose unpackaged XML
         client = kwargs.get("client", "simple_salesforce_metahelper")
-        single_package = kwargs.get("single_package", True)
-
-        if not isinstance(single_package, bool):
-            raise TypeError("single_package must be bool")
 
         unpackaged = ""
-        if kwargs.get("unpackaged"):
-            for metadata_type in kwargs.get("unpackaged"):
-                if isinstance(kwargs.get("unpackaged"), dict):
-                    members = kwargs.get("unpackaged")[metadata_type]
+        if unpackaged_param := kwargs.get("unpackaged", {}):
+            if isinstance(unpackaged_param, dict):
+                for metadata_type in unpackaged_param:
                     unpackaged += "<types>"
+                    members = unpackaged_param[metadata_type]
                     for member in members:
-                        unpackaged += "<members>{member}</members>".format(
-                            member=member
-                        )
-                    unpackaged += "<name>{metadata_type}</name></types>".format(
-                        metadata_type=metadata_type
-                    )
-                else:
-                    raise TypeError("unpackaged metadata types must be a dict")
+                        unpackaged += f"<members>{member}</members>"
+                    unpackaged += f"<name>{metadata_type}</name></types>"
+            else:
+                raise TypeError("unpackaged metadata types must be a dict")
 
         # Compose retrieve request XML
         attributes = {
@@ -564,27 +568,24 @@ class AsyncSfdcMetadataApi:
             additional_headers=headers,
             data=request,
         )
-
+        root = ET.fromstring(res.text)
         # Parse response to get async Id and status
-        async_process_id = (
-            ET.fromstring(res.text)
-            .find(
-                "soapenv:Body/mt:retrieveResponse/mt:result/mt:id", self._XML_NAMESPACES
-            )
-            .text
+        async_process_id = find_element_text(
+            root,
+            "soapenv:Body/mt:retrieveResponse/mt:result/mt:id",
+            self._XML_NAMESPACES,
         )
-        state = (
-            ET.fromstring(res.text)
-            .find(
-                "soapenv:Body/mt:retrieveResponse/mt:result/mt:state",
-                self._XML_NAMESPACES,
-            )
-            .text
+        state = find_element_text(
+            root,
+            "soapenv:Body/mt:retrieveResponse/mt:result/mt:state",
+            self._XML_NAMESPACES,
         )
 
         return async_process_id, state
 
-    async def retrieve_retrieve_result(self, async_process_id, include_zip, **kwargs):
+    async def retrieve_retrieve_result(
+        self, async_process_id: str, include_zip: str, **kwargs: Any
+    ) -> Element:
         """Retrieves status for specified retrieval id"""
         client = kwargs.get("client", "simple_salesforce_metahelper")
         attributes = {
@@ -614,13 +615,13 @@ class AsyncSfdcMetadataApi:
 
         return result
 
-    async def retrieve_zip(self, async_process_id, **kwargs):
+    async def retrieve_zip(
+        self, async_process_id: str, **kwargs: Any
+    ) -> Tuple[Optional[str], Optional[str], List[Dict[str, Any]], bytes]:
         """Retrieves ZIP file"""
         result = await self.retrieve_retrieve_result(async_process_id, "true", **kwargs)
-        state = result.find("mt:status", self._XML_NAMESPACES).text
-        error_message = result.find("mt:errorMessage", self._XML_NAMESPACES)
-        if error_message is not None:
-            error_message = error_message.text
+        state = find_element_text(result, "mt:status", self._XML_NAMESPACES)
+        error_message = find_element_text(result, "mt:errorMessage", self._XML_NAMESPACES)
 
         # Check if there are any messages
         messages = []
@@ -628,26 +629,26 @@ class AsyncSfdcMetadataApi:
         for message in message_list:
             messages.append(
                 {
-                    "file": message.find("mt:fileName", self._XML_NAMESPACES).text,
-                    "message": message.find("mt:problem", self._XML_NAMESPACES).text,
+                    "file": find_element_text(message, "mt:fileName", self._XML_NAMESPACES),
+                    "message": find_element_text(message, "mt:problem", self._XML_NAMESPACES),
                 }
             )
 
         # Retrieve base64 encoded ZIP file
-        zipfile_base64 = result.find("mt:zipFile", self._XML_NAMESPACES).text
+        zipfile_base64 = find_element_text(result, "mt:zipFile", self._XML_NAMESPACES, default="")
         zipfile = b64decode(zipfile_base64)
 
         return state, error_message, messages, zipfile
 
-    async def check_retrieve_status(self, async_process_id, **kwargs):
+    async def check_retrieve_status(
+        self, async_process_id: str, **kwargs: Any
+    ) -> Tuple[Optional[str], Optional[str], List[Dict[str, Optional[str]]]]:
         """Checks whether retrieval succeeded"""
         result = await self.retrieve_retrieve_result(
             async_process_id, "false", **kwargs
         )
-        state = result.find("mt:status", self._XML_NAMESPACES).text
-        error_message = result.find("mt:errorMessage", self._XML_NAMESPACES)
-        if error_message is not None:
-            error_message = error_message.text
+        state = find_element_text(result, "mt:status", self._XML_NAMESPACES)
+        error_message = find_element_text(result, "mt:errorMessage", self._XML_NAMESPACES)
 
         # Check if there are any messages
         messages = []
@@ -655,9 +656,22 @@ class AsyncSfdcMetadataApi:
         for message in message_list:
             messages.append(
                 {
-                    "file": message.find("mt:fileName", self._XML_NAMESPACES).text,
-                    "message": message.find("mt:problem", self._XML_NAMESPACES).text,
+                    "file": find_element_text(message, "mt:fileName", self._XML_NAMESPACES),
+                    "message": find_element_text(message, "mt:problem", self._XML_NAMESPACES),
                 }
             )
 
         return state, error_message, messages
+
+
+# # # # # Helpers # # # # #
+# # # # # # # # # # # # # #
+def find_element_text(
+    element: Element | None, path: str, *args: Any, default: Any = None
+) -> str | Any:
+    """Returns the text of an element or `default`"""
+    if element is None:
+        return default
+
+    node = element.find(path, *args)
+    return node.text if node is not None else default

@@ -4,3 +4,11 @@
 from .api import build_async_salesforce_client, AsyncSalesforce, AsyncSFType
 from .bulk import AsyncSFBulkHandler
 from .login import AsyncSalesforceLogin
+
+__all__ = [
+    "build_async_salesforce_client",
+    "AsyncSalesforce",
+    "AsyncSFType",
+    "AsyncSFBulkHandler",
+    "AsyncSalesforceLogin",
+]

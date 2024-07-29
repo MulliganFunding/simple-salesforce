@@ -14,9 +14,9 @@ from unittest.mock import patch
 import requests
 import responses
 
-from simple_salesforce import tests
 from simple_salesforce.api import Salesforce
 from simple_salesforce.bulk2 import JobState, Operation
+import tests
 
 # pylint: disable=line-too-long,missing-docstring
 

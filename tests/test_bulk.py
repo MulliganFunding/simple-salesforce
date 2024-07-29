@@ -11,10 +11,10 @@ from unittest.mock import patch
 
 import requests
 import responses
-from simple_salesforce import tests
 from simple_salesforce.api import Salesforce
 from simple_salesforce.bulk import SFBulkType
 from simple_salesforce.exceptions import SalesforceGeneralError
+import tests
 
 
 class TestSFBulkHandler(unittest.TestCase):

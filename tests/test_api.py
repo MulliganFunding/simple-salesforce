@@ -11,8 +11,8 @@ from unittest.mock import patch
 
 import requests
 import responses
-from simple_salesforce import tests
 from simple_salesforce.api import PerAppUsage, Salesforce, SFType, Usage
+import tests
 
 
 def _create_sf_type(

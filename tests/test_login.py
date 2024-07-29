@@ -11,9 +11,9 @@ from urllib.parse import urlparse
 import requests
 import responses
 
-from simple_salesforce import tests
-from simple_salesforce.exceptions import SalesforceAuthenticationFailed
 from simple_salesforce.login import SalesforceLogin
+from simple_salesforce.exceptions import SalesforceAuthenticationFailed
+import tests
 
 
 class TestSalesforceLogin(unittest.TestCase):
