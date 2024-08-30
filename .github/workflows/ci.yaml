@@ -18,7 +18,7 @@ jobs:
         contents: read
         pull-requests: write
 
-    name: "Python ${{ matrix.python-version }}"
+    name: "Python ${{ matrix.python-version }} for ${{ matrix.os }}"
     runs-on: "ubuntu-latest"
     strategy:
       matrix:
