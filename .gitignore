@@ -21,3 +21,5 @@ venv
 .mypy_cache
 .python-version
 htmlcov/
+coverage.xml
+coverage/

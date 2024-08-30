@@ -25,6 +25,9 @@ jobs:
         os: ["ubuntu-latest", "windows-latest", "macos-latest"]
         python-version: ["3.10", "3.11", "3.12"]
     steps:
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just
       - uses: "actions/checkout@v3"
       - uses: "actions/setup-python@v4"
         with:
@@ -35,18 +38,17 @@ jobs:
         with:
           path: ~/.cache/pypoetry
           key: ${{ runner.os }}-poetry-${{ hashFiles('**/poetry.lock') }}
-          restore-keys: ${{ runner.os }}-poetry-
+          restore-keys: ${{ runner.os }}-poetry-async-simple-sf
       - name: "Install poetry"
         run: "pip install poetry"
       - name: "Configure poetry"
         run: "poetry config virtualenvs.create false --local"
       - name: "Run poetry install deps"
-        run: "poetry install --no-root"
-      - name: "Run tests"
-        run: "poetry run pytest --cov-report xml --junitxml=${COVERAGE_DIR}/unittest.junit.xml"
-
-      # - name: "Run mypy"
-      #   run: "poetry run mypy simple_salesforce/aio"
+        run: "just bootstrap"
+      - name: "Run code quality checks"
+        run: "just check"
+      - name: "Run code quality checks"
+        run: "just ci-test ${COVERAGE_DIR}"
 
       # Publish code coverage results
       - name: Code Coverage Report

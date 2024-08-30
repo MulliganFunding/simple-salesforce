@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "async-simple-salesforce"
-version = "1.12.6a1"
+version = "1.12.6a2"
 description = "Async fork of simple-salesforce"
 authors = ["Erik Aker <eaker@mulliganfunding.com>"]
 license = "Apache-2.0"
@@ -11,30 +11,29 @@ include = ["LICENSE.txt"]
 
 [tool.poetry.dependencies]
 python = "^3.10"
-aiofiles = "<24"
+aiofiles = "*"
 httpx = "<1"
 more-itertools = "*"
 pendulum = "^3"
 PyJWT = {version = "<3", extras = ["crypto"]}
-requests = "<3"
+requests = "*"
 typing-extensions = "*"
 zeep = "<5"
 
 [tool.poetry.group.dev.dependencies]
-black = "^23.7.0"
 cryptography = "*"
 mypy = "^1.11.0"
 pylint = "^2.17.5"
-pytest = "^7.4.0"
-pytest-asyncio = "^0.21.1"
-pytest-cov = "^4.1.0"
+pytest = "^8.3.2"
+pytest-asyncio = "^0.24.0"
+pytest-cov = "^5.0.0"
 pytest-httpx = "^0.30.0"
-pytest-pylint = "^0.19.0"
-pytz = "^2023.3"
-responses = "^0.23.3"
-twine = "^3.8.0"
+pytz = "^2024.1"
+responses = "^0.25.3"
+twine = "^5.1.1"
 types-aiofiles = "^24.1.0.20240626"
 types-requests = "^2.32.0.20240712"
+ruff = "^0.6.3"
 
 [build-system]
 requires = ["poetry-core"]
@@ -48,3 +47,50 @@ addopts = "--cov=simple_salesforce --cov-report html"
 testpaths = [
     "tests",
 ]
+
+[tool.ruff.lint]
+# Enable pycodestyle (`E`) and Pyflakes (`F`) codes by default.
+select = ["E", "F"]
+ignore = ["E402", "E501"]
+
+# Allow autofix for all enabled rules (when `--fix`) is provided.
+fixable = ["A", "B", "C", "D", "E", "F"]
+
+unfixable = []
+
+# Allow unused variables when underscore-prefixed.
+dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
+
+[tool.ruff.lint.per-file-ignores]
+# Ignore `F401` (unused import) for `__init__.py` files.
+"__init__.py" = ["F401"]
+
+[tool.ruff]
+# Exclude a variety of commonly ignored directories.
+exclude = [
+    ".bzr",
+    ".direnv",
+    ".eggs",
+    ".git",
+    ".hg",
+    ".mypy_cache",
+    ".nox",
+    ".pants.d",
+    ".pytype",
+    ".ruff_cache",
+    ".svn",
+    ".tox",
+    ".venv",
+    "__pypackages__",
+    "_build",
+    "buck-out",
+    "build",
+    "dist",
+    "node_modules",
+    "venv",
+]
+
+line-length = 110
+
+# Assume Python 3.10.
+target-version = "py311"
