@@ -1,3 +1,7 @@
+--------------------------------
+
+Note: This project has been detached from upstream so this version of the repo has been archived. Please find repo moved to here: 
+
 *****************
 Simple Salesforce
 *****************
