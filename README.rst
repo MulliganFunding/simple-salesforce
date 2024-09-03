@@ -1,6 +1,10 @@
---------------------------------
+=============
 
-Note: This project has been detached from upstream so this version of the repo has been archived. Please find repo moved to here: 
+Note: This project has been detached from upstream so this version of the repo has been archived. 
+
+Please find repo moved to here: https://github.com/MulliganFunding/async-simple-salesforce
+
+--------------------------------
 
 *****************
 Simple Salesforce
